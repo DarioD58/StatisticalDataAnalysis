@@ -1,0 +1,126 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+```
+
+##Analiza razlike u težini između američkih vojarni
+
+### Motivacija
+Težina može biti zanimljiv indikator raznih proces u ljudskom tijelu. Od prehrane do količine treninga, analiza težina može pokazati zanimljive rezultate između vojarni
+
+### Istraživanje
+
+```{r}
+ansur = read.csv("ANSUR_II_data.csv")
+
+uniqueCamps = unique(ansur$Installation)
+
+attributes = names(ansur)
+
+numByCamp = c()
+
+```
+
+```{r}
+for (camp in uniqueCamps) {
+  inCamp = ansur[ which(ansur$Installation==camp),]
+  ##ansurByCamps.append(inCamp);
+  
+  if (nrow(inCamp) < 50) {
+    next
+  }
+  exceptCamp = ansur[ which(ansur$Installation!=camp),]
+  
+  hist(exceptCamp$weightkg, breaks=100, main=paste(camp, " po težini"), xlab="Težina", ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(ansur$weightkg), max(ansur$weightkg)))
+      
+  hist(inCamp$weightkg, breaks=100, main=paste(camp, " po težini"), xlab="Težina", ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(ansur$weightkg), max(ansur$weightkg)), add=T)
+      
+      
+}
+```
+
+
+Iz histograma težine je vidljivo koliko neki kampovi imaju raličiti broj ispitanika. Za daljnu analizu izabrati ćemo kampove s najvećim brojem pripadnika.
+
+```{r}
+table(ansur$Installation)
+```
+
+Vidimo kako su najveći kampovi vojnika Camp Shelby, Fort Bliss i Fort Gordon. Za daljnu analizu srednje vrijednosti težine ćemo koristiti upravo ta tri kampa.
+
+
+```{r}
+fortGordon = ansur[ansur$Installation=="Fort Gordon", ]
+fortBliss = ansur[ansur$Installation=="Fort Bliss", ]
+campShelby = ansur[ansur$Installation=="Camp Shelby", ]
+
+hist(campShelby$weightkg, breaks=50, main="Usporedba težina među kampovima", xlab="Težina", ylab="Frequency",col=rgb(0,0,1,0.5))
+      
+hist(fortBliss$weightkg, breaks=50, col=rgb(1,0,0,0.5), add=T)
+
+hist(fortGordon$weightkg, breaks=50, col=rgb(0,1,0,0.5), add=T)
+
+abline(v = mean(campShelby$weightkg), col = rgb(0,0,1), lwd = 2)
+abline(v = mean(fortGordon$weightkg), col = rgb(0,1,0), lwd = 2)
+abline(v = mean(fortBliss$weightkg), col = rgb(1,0,0), lwd = 2)
+
+legend('topright', legend = c("Fort Gordon", "Fort Bliss", "Camp Shelby"), col = c(rgb(0,1,0,0.5), rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex=2, pch=15)
+```
+
+Vidimo kako postoji određena razlika između srednjih vrijednosti tri najveća kampa. Ostaje nam za smanjiti uzorke na veličinu najmanjeg uzorka i provesti analizu.
+
+```{r}
+set.seed(42)
+
+row_shelby <- sample(nrow(campShelby))
+row_gordon <- sample(nrow(fortGordon))
+row_bliss <- sample(nrow(fortBliss))
+
+campShelby <- campShelby[row_shelby, ]
+fortGordon <- fortGordon[row_gordon, ]
+fortBliss <- fortBliss[row_bliss, ]
+
+campShelby <- campShelby[1:nrow(fortGordon),]
+fortBliss <- fortBliss[1:nrow(fortGordon),]
+
+nrow(campShelby)
+nrow(fortBliss)
+nrow(fortGordon)
+```
+
+Nakon nasumičnog balansiranja skupova podataka provodimo analizu varijance kako bi provjerili pretpostavke t-testa za analizu jednakosti dviju srednjih vrijednosti
+
+```{r}
+var.test(fortGordon$weightkg, fortBliss$weightkg)
+
+var.test(fortGordon$weightkg, campShelby$weightkg)
+
+var.test(campShelby$weightkg, fortBliss$weightkg)
+
+```
+
+Iz varijance možemo zaključiti kako za Fort Gordon ne možemo koristiti t-test u kojem uzimamo da su nam varijance jednake. S druge strane F-test između Fort Blissa i Camp Shelbya ima p vrijednost 0.7767 te sa velikom sigurnošću možemo tvrditi da su varijance jednake.
+
+```{r}
+t.test(fortGordon$weightkg, fortBliss$weightkg, alternative = "two.sided", var.equal = FALSE)
+t.test(fortGordon$weightkg, campShelby$weightkg, alternative = "two.sided", var.equal = FALSE)
+t.test(campShelby$weightkg, fortBliss$weightkg, alternative = "two.sided", var.equal = TRUE)
+```
+
+T-testom u sva tri slučaja odbacujemo $H_0$ = Kampovi imaju jednaku srednju vrijednost težine.
+
+
+### Zaključak
+Odbacivanje nulte hipoteze nam govori kako postoji ne zanemariva razlika između najvećih kampova američke vojske u težini. Takav zaključak otvara područje za dodatna istraživanja uzroka postojanja te razlike ali takvo istraživanje je van domene ovog projekta
+
+
+
+

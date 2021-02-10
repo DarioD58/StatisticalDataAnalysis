@@ -1,0 +1,1573 @@
+---
+title: "Antropometrijski podatci američkih vojnih snaga"
+author: "Dario Deković, Emil Huzjak, Mijo Piškur, Janko Vidaković"
+date: "01/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+```
+
+# Antropometrijski podatci američkih vojnih snaga
+
+## Uvod
+
+Podaci kojima se bavimo u ovom projektu dolaze iz dobro poznatog skupa ANSUR II koji sačinjavaju 93 antropometrijske mjere prikupljene na pripadnicima američke vojske. Prikupljeno je 6068 podataka od kojih je 4082 pripadnika muške populacije te 1986 pripadnika ženske populacije. Na danom skupu podataka smo proveli našu analizu podataka koja je obuhvaćala testiranje hipoteza i izgradnju modela za predikciju različitih varijabli. Projekt je podjeljen na odlomke, a svaki odlomak predstavlja jedan donekle zasebni element ovog projekta. Na početku svakog odlomka se nalazi motivacija iza tog dijela istraživanja. Nadalje, kako je skup podataka relativno velik eksploratorna analiza podataka se nalazi u svakome odlomku za dio skupa podataka koji je relevantan za taj dio istraživanja. Bitno je napomenuti kako bi se izbjeglo prepisivanje relevantnih podataka u svakom odlomku se iznova učitava csv datoteka s podacima. 
+
+## Utjecaj spola na antropometrijske mjere
+
+### Motivacija
+
+Kada smo počeli raditi na projektu smo uočili kako dosta antropometrijskih mjera ne slijedi normalnu distribuciju. Daljne istraživanje nam je ukazalo kako je jedan od važnijih razloga upravo varijacija među spolovima. S obzirom koliko antropometrijskih razlika naizgled postoji između muškaraca i žena zaključili smo kako analiza tih razlika zaslužuje svoj zasebni odlomak u projektu te smo je stavili na početak projekta s obzirom da dosta daljnih analiza i modela koristi upravo postojanje te razlike.
+
+### Istraživanje
+
+Učitajmo skup podataka i razdvojimo ih po spolu.
+
+
+```{r}
+ansur.II.data = read.csv("ANSUR_II_data.csv") #učitavanje podataka
+males <- ansur.II.data[ansur.II.data$Gender=="Male",] #muške vojne snage
+females <- ansur.II.data[ansur.II.data$Gender=="Female",] #ženske vojne snage
+
+```
+
+
+Prikažimo histogramima najznačajnije antropomorfijske mjere.
+
+
+```{r}
+
+#histogrami varijable s obzirom na spol
+plot_by_gender <- function(column, main = column, xlab = column) {
+  summary(females[[column]])
+  summary(males[[column]])
+  hist(males[[column]], breaks=30, main=main, xlab=xlab, ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(ansur.II.data[[column]]), max(ansur.II.data[[column]])))
+  hist(females[[column]], breaks=30, main=main, xlab=xlab, ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(ansur.II.data[[column]]), max(ansur.II.data[[column]])), add=T)
+  legend(x="topright", c("Female", "Male"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+}
+
+plot_by_gender("stature", "Stature", "Height [mm]") 
+plot_by_gender("weightkg", "Weight", "Weight [hg]")
+plot_by_gender("handlength", "Hand length", "Length [mm]")
+plot_by_gender("headcircumference", "Head circumference", "Circumference [mm]")
+plot_by_gender("chestcircumference", "Chest circumference", "Circumference [mm]")
+plot_by_gender("waistcircumference", "Waist circumference", "Circumference [mm]")
+plot_by_gender("wristcircumference", "Wrist circumference", "Circumference [mm]")
+plot_by_gender("anklecircumference", "Ankle circumference", "Circumference [mm]")
+
+```
+
+
+Na svim histogramima jasno se vide manje ili veće razlike u antropomorfijskim mjerama s obzirom na spol. Neke varijable, kao opseg zapešća, vizualno pokazuju puno značajniju razliku, dok se na primjer opseg gležnja puno manje razlikuje. Treba imati na umu i činjenicu da je podataka o muškim vojnicima otprilike duplo više nego podataka o ženskim vojnicima, što znači da uzorak muških vojnika bolje opisuje populaciju muških vojnih snaga nego što to čini ženski uzorak. 
+Bilo bi zanimljivo pokušati predvidjeti spol vojnika pomoću višestruke logističke regresije, no umjesto toga, promotrimo detaljnije razlike u mjerama centralne tendencije i rasipanja između ova dva uzorka. Pronađimo varijablu za koju se očekivanja razlikuju najviše, tj. najmanje.
+
+
+```{r}
+
+#računanje relativne razlike očekivanja između spolova s obzirom na rang varijable
+get_mean_diff <- function(col) {
+  return(abs(mean(females[[col]]) - mean(males[[col]])) / (max(ansur.II.data[col]) - min(ansur.II.data[col])))
+}
+
+#nalaženje ekstremne vrijednosti (minimuma ili maksimuma) razlike očekivanja
+find_extreme_diff <- function(relation, data, get_variable_diff) {
+  extreme_diff <- 0
+  column <- ""
+  sapply(1:ncol(data), function(i) {
+    if (i == 1) {
+      column <<- colnames(data)[i]
+      extreme_diff <<- get_variable_diff(colnames(data)[i])
+    } else if (relation == "MAX") {
+       curr_extreme_diff <- get_variable_diff(colnames(data)[i])
+        if (curr_extreme_diff > extreme_diff) {
+          column <<- colnames(data)[i]
+          extreme_diff <<- curr_extreme_diff
+        } else {}
+    } else if (relation == "MIN") {
+       curr_extreme_diff <- get_variable_diff(colnames(data)[i])
+        if (curr_extreme_diff < extreme_diff) {
+          column <<- colnames(data)[i]
+          extreme_diff <<- curr_extreme_diff
+        } else {}
+    } else {}
+  })
+  return(c(column, extreme_diff))
+}
+
+
+ansur.II.data.numeric <- select(ansur.II.data, -c("Gender", "Date", "Installation", "Component", "Branch", "PrimaryMOS", "SubjectsBirthLocation", "SubjectNumericRace", "Ethnicity", "DODRace", "Age", "WritingPreference", "X")) #uklanjanje svih ne-numeričkih ili neznačajnih varijabli
+
+find_extreme_diff("MAX", ansur.II.data.numeric, get_mean_diff) #najveća razlika
+find_extreme_diff("MIN", ansur.II.data.numeric, get_mean_diff) #najmanja razlika
+```
+
+
+Vidimo da je opseg vrata mjera koja se najviše razlikuje s obzirom na spol, s razlikom očekivanja od skoro pa 30%. S druge strane, očekivani opseg zadnjice je skoro jednak u oba uzorka, s razlikom očekivanja od samo 0.2%. Vizualizirajmo razdiobe ovih varijabli
+
+
+```{r}
+plot_by_gender("neckcircumference", "Neck circumference by gender", "Circumference [mm]")
+plot_by_gender("buttockcircumference", "Buttock circumference by gender", "Circumference [mm]")
+
+```
+
+
+Histogrami potvrđuju značajne sličnosti, odnosno razlike. Testirajmo hipotezu o jednakosti očekivanja opsega zadnjice između muškaraca i žena.
+Prije svega, krenimo od provjere ravnaju li se uzorci po normalnoj distribuciji. Histogrami izgledaju poprilično normalno distribuirano, no provjerimo dodatno qq plotovima i Lillieforsovim testom o normalnosti distribucije.
+
+
+```{r}
+test.males <- males$buttockcircumference
+test.females <- females$buttockcircumference
+
+qqnorm(test.males, main="Male buttock circumference")
+qqline(test.males, col="blue", lwd=2)
+
+qqnorm(test.females, main="Female buttock circumference")
+qqline(test.females, col="red", lwd=2)
+
+require(nortest)
+lillie.test(test.males)
+lillie.test(test.females)
+```
+
+
+qq plotovi pokazuju da se uzorci velikom većinom ravnaju po normalnoj razdiobi, uz malo prevelike repove, kako je uočeno i u histogramima. Lilliefors test pokazuje da distribucija nije normalna sa statističkom značajnošću, no nije daleko od toga i to je prihvatljivo, pogotovo zato što t-test, kojim ćemo testirati hipotezu o očekivanjima, dobro podnosi normalnost. 
+
+Druga pretpostavka koju moramo provjeriti prije testiranja jednakosti očekivanja je nezavisnost uzoraka. Kako su uzorci razdvojeni po spolu, smisleno je pretpostaviti da su opservacije nezavisne.
+
+Zadnja stvar koja nam treba prije provođenja testa su informacije o varijancama. Kako varijance populacija nisu poznate, moraju se procijeniti iz uzorka.
+
+
+```{r}
+sd(test.males)
+sd(test.females)
+```
+
+
+Dobivene vrijednosti sugeriraju da bi varijance, iako nepoznate, mogle biti jednake. Ovu hipotezu možemo provjeriti dvostranim F testom.
+
+$H_0: \sigma_m^2 = \sigma_f^2$
+
+$H_1: \sigma_m^2 \neq \sigma_f^2$
+
+
+```{r}
+var.test(test.males, test.females, alternative = "two.sided")
+```
+
+
+Iz rezultata testa, koji je proveden s razinom značajnosti $\alpha = 0.05$, ne možemo reći da postoji statistički značajna razlika u varijancama. Drugim riječima, ne možemo odbaciti nultu hipotezu te nastavljamo s pretpostavkom da su varijance uzoraka jednake.
+
+Koristimo t-test.
+
+$H_0: \mu_m = \mu_f$
+
+$H_1: \mu_m \neq \mu_f$
+
+
+```{r}
+t.test(test.males, test.females, alternative = "two.sided", var.equal = TRUE)
+
+```
+
+
+Na temelju t-testa i visoke p-vrijednosti ne možemo sa statističkom značajnošću odbaciti $H_0$. Drugim riječima, ne možemo opovrgnuti pretpostavku da je očekivani opseg zadnjice jednak za muškarce i žene, te dolazimo do zanimljivog i ne nužno očekivanog zaključka da muškarci i žene imaju prosječno jednak opseg zadnjice!
+
+Pogledajmo sad više varijabli s maksimalnim tj. minimalnim razlikama u očekivanjima. Pronađimo 5 varijabli koje se najviše razlikuju, te 5 varijabli koje se najmanje razlikuju.
+
+
+```{r}
+find_n_ex_diff <- function(n = 1, get_variable_diff) {
+  ansur.II.data.numeric <- select(ansur.II.data, -c("Gender", "Date", "Installation", "Component", "Branch", "PrimaryMOS", "SubjectsBirthLocation", "SubjectNumericRace", "Ethnicity", "DODRace", "Age", "WritingPreference", "X")) #uklanjanje svih ne-numeričkih ili neznačajnih varijabli
+  
+  mins <- vector("list", length=n)
+  maxs <- vector("list", length=n)
+  
+  sapply(1:n, function(i) {
+    maxs[[i]] <<- find_extreme_diff("MAX", ansur.II.data.numeric, get_variable_diff)
+    ansur.II.data.numeric <<- select(ansur.II.data.numeric, -c(maxs[[i]][1]))
+    maxcol <- maxs[[i]][1]
+    plot_by_gender(maxcol)
+  })
+  
+  sapply(1:n, function(i) {
+    mins[[i]] <<- find_extreme_diff("MIN", ansur.II.data.numeric, get_variable_diff)
+    ansur.II.data.numeric <<- select(ansur.II.data.numeric, -c(mins[[i]][1]))
+    mincol <- mins[[i]][1]
+    plot_by_gender(mincol)
+    
+  })
+  
+  return(list("mins" = mins, "maxs" = maxs))
+}
+
+res <- find_n_ex_diff(5, get_mean_diff)
+```
+
+
+### Zaključak
+
+Iz dobivenih histograma može se zaključiti da se, s antropometričkog aspekta, muškarci i žene najviše razlikuju u području gornjeg dijela trupa, konkretno oko vrata, ramena i ruku, dok se najmanje razlikuju u području donjeg dijela trupa i gornjeg dijela nogu.
+
+
+
+
+
+## Model za procjenu kilaže vojnika iz dostupnih podataka
+
+### Motivacija
+
+O tjelesnoj težini ovise brojni postupci u medicini. Jedan od najvažnijih postupaka u modernoj medicini je anestezija, a doza anestetika ovisi primarno o težini osobe koja ju prima. Naravno, u nekim situacijama vaga nije dostupna, pogotovo kada pričamo o situacijama u kojima se najčešće nalazi vojska. Zato smatramo kako bi korist modela koji uspješno predviđa težinu osobe na temelju podataka koji se mogu dobiti najobičnijim metrom velika.
+
+### Istraživanje
+
+```{r}
+antrData =  read.csv("ANSUR_II_data.csv")
+```
+
+Prvi korak će nam biti izbor i vizualizacija izabranih parametara.
+Inicijalni izbor parametara je moja slobodna procjena koji parametri bi
+mogli imati značajan utjecaj na kilažu vojnika uzimajući u obzir dostupnost tih podataka jednostavnim krojačkim metrom i ispitivanjem. Naravno konačni izbor 
+parametara će ovisiti o performansama modela. 
+
+```{r}
+plot(antrData$stature, antrData$weightkg, xlab = "Težina", ylab = "Visina",
+     main = "Distribucija težina u ovisnosti o visini")
+plot(antrData$Age, antrData$weightkg, xlab = "Težina", ylab = "Dob",
+     main = "Distribucija težina u ovisnosti o dobi")
+plot(antrData$chestcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg prsnog koša",
+     main = "Distribucija težina u ovisnosti o opsegu prsnog koša")
+plot(antrData$waistcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg struka",
+     main = "Distribucija težina u ovisnosti o opsegu struka")
+plot(antrData$thighcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg bedra",
+     main = "Distribucija težina u ovisnosti o opsegu bedra")
+plot(antrData$bicepscircumferenceflexed, antrData$weightkg, xlab = "Težina", ylab = "Opseg bicepsa",
+     main = "Distribucija težina u ovisnosti o opsegu bicepsa")
+boxplot(antrData$weightkg~antrData$Gender, xlab = "Spol", ylab = "Težina",
+        main = "Distribucija težina u ovisnosti o spolu")
+```
+
+Vidimo da većina izabranih varijabli na grafovima pokazuje jasnu zavisnost s kilažom.
+Varijabla koja ne pokazuje lijepi linearni trend je dob(Age) ispitanika. Sada pristupamo kostrukciji jednostavnih modela linearne regresije za svaki od izabranih parametara.
+
+```{r}
+#Priprema kategorijskih varijabli
+
+require(fastDummies)
+antrData = dummy_cols(antrData, select_columns = c("Gender"))
+```
+
+```{r}
+fitHeight = lm(weightkg ~ stature, data = antrData)
+fitAge = lm(weightkg ~ Age, data = antrData)
+fitChest = lm(weightkg ~ chestcircumference, data = antrData)
+fitWaist = lm(weightkg ~ waistcircumference, data = antrData)
+fitThigh = lm(weightkg ~ thighcircumference, data = antrData)
+fitBiceps = lm(weightkg ~ bicepscircumferenceflexed, data = antrData)
+fitGender = lm(weightkg ~ Gender_Male, data = antrData)
+
+plot(antrData$stature, antrData$weightkg, xlab = "Težina", ylab = "Visina",
+     main = "Distribucija težina u ovisnosti o visini")
+lines(antrData$stature, fitHeight$fitted.values, col = 'red')
+
+plot(antrData$Age, antrData$weightkg, xlab = "Težina", ylab = "Dob",
+     main = "Distribucija težina u ovisnosti o dobi")
+lines(antrData$Age, fitAge$fitted.values, col = 'red')
+
+plot(antrData$chestcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg prsnog koša",
+     main = "Distribucija težina u ovisnosti o opsegu prsnog koša")
+lines(antrData$chestcircumference, fitChest$fitted.values, col = 'red')
+
+plot(antrData$waistcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg struka",
+     main = "Distribucija težina u ovisnosti o opsegu struka")
+lines(antrData$waistcircumference, fitWaist$fitted.values, col = 'red')
+
+plot(antrData$thighcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg bedra",
+     main = "Distribucija težina u ovisnosti o opsegu bedra")
+lines(antrData$thighcircumference, fitThigh$fitted.values, col = 'red')
+
+plot(antrData$bicepscircumferenceflexed, antrData$weightkg, xlab = "Težina", ylab = "Opseg bicepsa",
+     main = "Distribucija težina u ovisnosti o opsegu bicepsa")
+lines(antrData$bicepscircumferenceflexed, fitBiceps$fitted.values, col = 'red')
+
+plot(antrData$Gender_Male, antrData$weightkg,  xlab = "Težina", ylab = "Spol",
+        main = "Distribucija težina u ovisnosti o spolu")
+lines(antrData$Gender_Male, fitGender$fitted.values, col = "red")
+
+
+```
+
+```{r}
+summary(fitHeight)
+
+summary(fitAge)
+
+summary(fitChest)
+
+summary(fitWaist)
+
+summary(fitThigh)
+
+summary(fitBiceps)
+
+summary(fitGender)
+```
+
+Univarijatnim modelima za sve inicijalno izabrane varijable vidimo kako je inicijalni izbor parametara bio zadovoljavajući. T testovi nad dobivenim koeficijentima pokazuju visoku razinu značajnosti, a koeficijent determinacije R^2 objašnjava dobar dio varijance u podacima. Univarijatni modeli koji ne postižu zadovoljavajuće rezultate su dob i spol. $R^2$ vrijednost u modelu u kojem je regresor dob je 0.05302 što ukazuje na to da objašnjava jako mali dio varijance u podacima. Isto tako spol ima malu $R^2$ vrijednost te ćemo u daljnoj analizi razmotriti ako nam se više isplati imati odvojene linarne modele za muškarce i žene.
+
+```{r}
+#Provjera normalnosti
+hist(fitHeight$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom visina")
+plot(fitHeight, which = 1)
+
+hist(fitAge$residuals,  xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom dob")
+plot(fitAge, which = 1)
+
+hist(fitChest$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg prsnog koša")
+plot(fitChest, which = 1)
+
+hist(fitWaist$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg struka")
+plot(fitWaist, which = 1)
+
+hist(fitThigh$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg bedra")
+plot(fitThigh, which = 1)
+
+hist(fitBiceps$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg bicepsa")
+plot(fitBiceps, which = 1)
+
+hist(fitGender$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom spol")
+plot(fitGender, which = 1)
+```
+
+Iz histograma vidimo kako distribucija reziduala nema teških repova i kako izgleda realtivno normalno distribuirano tako da možemo iz toga ako uzmemo u obzir robusnost t-testa na normalnost zaključiti kako je početna nužna pretpostavka o normalnosti distribucija zadovoljena.Isto tako je bitna pretpostavka o homogenosti varijanci modela. Iz grafova reziduala i fitanih vrijednosti vidimo kako u većini slučajeva pretpostavka vrijedi. Opsezi pokazuje određenu zavisnost koja bi se mogla objasniti varijacijama u spolu. S tim idejama krećemo u daljnu analizu u kojoj ćemo konstruirati multivarijatni regresijski model za predviđanje težine.
+
+Ipak prije nastavka moramo proučiti neke pretpostavke modela. Kako imamo 4 regresora koja se tiču opsega dijelova ljudskog tijela za očekivati je kako bi ti regresori mogli biti jako korelirani i samim time u međusobnom prisutstvu smanjiti svoju značajnost u modelu.
+
+```{r}
+cor(cbind(antrData$waistcircumference, antrData$bicepscircumferenceflexed, antrData$chestcircumference,
+                      antrData$thighcircumference, antrData$stature, antrData$Age))
+
+```
+
+Kao što je i očekivano regresori koji se tiču opsega su međusobno jako korelirani, tako da, prije njihovog uključivanja u ukupni model, ćemo konstruirati model koji se sastoji samo od ta 4 regresora.
+
+```{r}
+fitCircumference = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference, data = antrData)
+
+summary(fitCircumference)
+```
+
+Suprotno očekivanjima svi koeficijenti uz regresore se razlikuju od nule uz zanemarivo malu p vrijednost. Sami model objašnjava preko 91% varijance u podacima. Možda najbitnija činjenica je kako je $R^2_{adj}$ neznatno manji od $R^2$ što je dobar indikator da ne koristimo suvišne regresore u modelu.
+
+```{r}
+hist(fitCircumference$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorima koji imaju veze s opsegom")
+hist(rstandard(fitCircumference), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela s regresorima koji imaju veze s opsegom")
+
+plot(fitCircumference, which = 1)
+
+qqnorm(rstandard(fitCircumference))
+qqline(rstandard(fitCircumference))
+
+require(nortest)
+lillie.test(rstandard(fitCircumference))
+```
+
+Ovaj model pokazuje jako dobre rezultate i vidimo kako je pretpostavka o normalnosti zadovoljena s obzirom da histogram ima lijep oblike i Q-Q graf nema teške repove. Vizualne pretpostavke dodatno potvrđuje LIllieforsov test na normalnost u kojem na relativno velika p vrijednost govori kako ne možemo odbacit $H_0$ = Podaci dolaze iz normalne distribucije. S druge strane pretpostavka o homogenosti varijance pokazuje jasnu polinomijalnu(kvadratnu) zavisnost.
+
+U slijedećem koraku nam preostaje konstruirati model za sve prethodno spomenute regresore.
+
+```{r}
+fitMulti = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature + Age + Gender_Male, data = antrData)
+
+summary(fitMulti)
+```
+
+Ovaj model isto tako postiže i više nego zadovoljavajuće rezultate. Svi koeficijenti su statistički značajni te je $R^2_{adj} = R^2$ što nam ukazuje na to da nemamo suvišnih regresora. Nadalje vrijednosti $R^2{adj}$ i $R^2$ je 0.9733 što nam govori kako model objašnjava 97.33% varijance u podacima. Preostaje nam ispitati pretpostavku o normalnosti. 
+
+```{r}
+hist(fitMulti$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima")
+hist(rstandard(fitMulti), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima")
+
+plot(fitMulti, which = 1)
+
+qqnorm(rstandard(fitMulti))
+qqline(rstandard(fitMulti))
+
+require(nortest)
+lillie.test(rstandard(fitMulti))
+```
+
+Vidimo kako nam unatoč povećanoj $R^2$ vrijednosti pretpostavka o normalnostiviše ne vrijedi. Tu su najindikativniji Q-Q graf i Lillieforsov test. Q-Q plot ima težak rep u gornjim kvartilima, a Lillieforsov test izbacuje jako malu p vrijednost što nam nalaže odbacivanje $H_0$ = "Podaci dolaze iz normalne distribucije". Nadalje pretpostavka o homogenosti varijance nije zadovoljena s obzirom da residuali i dalje pokazuju jasan polinomijalni trend. Sada bi se mogli pozvati na robusnost t-testa na normalnost ali iz prethodnih analiza na ovom projektu znamo koliko varijacije unose razlike koje postoje među spolovima. Stoga ćemo izgraditi dva odvojena model za muškarce i žene te analizirati kako to utječe na normalnost i homogenost varijanci. 
+
+
+```{r}
+antrData_male <- antrData[antrData$Gender_Male == 1,]
+antrData_female <- antrData[antrData$Gender_Male == 0,]
+```
+
+```{r}
+fitMulti_male = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature + Age, data = antrData_male)
+
+summary(fitMulti_male)
+
+fitMulti_female = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature + Age, data = antrData_female)
+
+summary(fitMulti_female)
+```
+
+Na prvi pogled nije se puno promjenilo ali primarni razlog ovog koraka je bilo popravljanje pretpostavke o normalnosti tako da u sljedećem koraku provjeravamo upravo to.
+
+
+```{r}
+hist(fitMulti_male$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za muškarce")
+hist(rstandard(fitMulti_male), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za muškarce")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_male))
+qqline(rstandard(fitMulti_male))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_male))
+
+hist(fitMulti_female$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za žene")
+hist(rstandard(fitMulti_female), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za žene")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_female))
+qqline(rstandard(fitMulti_female))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_female))
+```
+
+Iako je p vrijednost u oba slučaja značajno narasla, dapače za žensku populaciju ne odbacujemo $H_0$, problem je i dalje prisutan u muškoj populaciji. Nadalje homogenost varijanci se nije popravila te i dalje indicira polinomijalnu ovisnost. Ipak ako razmislimo o tome kakvi ljudi služe u vojsci lako možemo doći do zaključka o tome gdje bi se problem mogao nalaziti.
+
+```{r}
+hist(antrData_male$Age, breaks = 30 ,col = rgb(1,0,0,0.5), xlab = "Dob", ylab = "Broj subjekata", main = "Dob među muškom populacijom")
+
+hist(antrData_female$Age, breaks = 30, col =rgb(0,1,0,0.5), add = T)
+
+legend('topright', legend = c("Muškarci", "Žene"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+```
+
+I upravo ovdje nailazimo na problem, kako je biti vojnik izuzetno naporan fizički posao populacija je većinski sastavljena od mladih ljudi. Kao što je vidljivo iz histograma distribucija dobi među populacijom nije normalna tje vjerovatni uzročnik pada našeg modela na testu normalnosti.
+
+Kako bi to provjerili izgraditi ćemo model koji ne uključuje dob te ga testirati na normalnost. Zbog male $R^2$ vrijednosti linearnog modela koji je uključivao samo dob ne očekujemo preveliki gubitak u tom području.
+
+```{r}
+fitMulti_male = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature, data = antrData_male)
+
+summary(fitMulti_male)
+
+fitMulti_female = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature, data = antrData_female)
+
+summary(fitMulti_female)
+
+```
+Vidimo kako je smanjenje $R^2$ vrijednosti zanemarivo tako da je isključivanje dobi iz modela i s te strane opravdano. Provjerimo sad normlanost naših novih modela.
+
+```{r}
+hist(fitMulti_male$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za muškarce")
+hist(rstandard(fitMulti_male), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za muškarce")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_male))
+qqline(rstandard(fitMulti_male))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_male))
+
+hist(fitMulti_female$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za žene")
+hist(rstandard(fitMulti_female), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za žene")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_female))
+qqline(rstandard(fitMulti_female))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_female))
+```
+
+Tu ćemo stati s daljnim poboljšavanje modela. Za ženski dio populacije ne odbacujemo $H_0$ te zaključujemo kako nema dovoljno dokaza da bi odbacili hiptezu o normalnosti. Nažalost za muški dio populacije ne možemo donjeti isti zaključak na temelju Lillieforsovog testa. S druge strane možemo se pozvati na robusnost t-testa na normalnost, s obzirom na to da su histogrami relativno urednog oblika te nemaju teških repova. Ipak ovo je indikacija kako u težini među muškarcima postoji varijacija koju naš model ne objašnjava. Isto tako daljna poboljšanja modela su svakako moguća s obzirom na graf reziduala i prilagodenih vrijednosti iz kojeg jasno vidimo kako pretpostavka o homogenosti varijance nije zadovoljena te reziduali pokazuju polinomijalnu ovisnost.
+
+### Zaključak
+
+Izgradili smo dva multivarijatna linarna modela za predviđanje težine osobe. Modeli su odvojeni po spolu i oba modela objašnjavaju preko 95% varijance u podacima. Ovakav prediktivni model bi mogao biti izuzetno koristan u medicini pogotovo u područijima gdje vaga nije dostupna. Iz tog razloga je svih 5 regresora moguće dobiti korištenjem jednostavnog krojačkog metra. Isto tako podaci ne zahtjevaju nikakvo ispitivanje bolesnika, što može biti izuzetno korisno u hitnim situacijama kada je pacijent bez svijesti.
+
+
+
+
+## Utjecaj dominantne ruke na antropometrijske mjere
+
+### Motivacija 
+
+Za očekivati je da ljudi koji pišu desnom rukom imaju veću desnu ruku od onih koji pišu lijevom. Na raspolaganju imamo listu opsega desnog bicepsa koju možemo podijeliti na one od dešnjaka, lijevaka, i onih koji su podjednako spretni s obje ruke. S obzirom da je vojska profesija u kojoj je fizička sprema izrazito važna, a za očekivati je za ljude koji su izrazito fizički spremni da im je mišićna masa dobro izbalansirana. Ova analiza može ukazati na moguće manjkavosti u treningu vojnika. 
+
+### Istraživanje
+
+```{r}
+antrData =  read.csv("ANSUR_II_data.csv")
+summary(antrData$bicepscircumferenceflexed)
+
+
+ansurLeft <- antrData[ which(antrData$WritingPreference=='Left hand'),]
+ansurRight <- antrData[ which(antrData$WritingPreference=='Right hand'),]
+ansurAmbi <- antrData[ which(antrData$WritingPreference=='Either hand (No preference)'),]
+
+summary(ansurLeft$bicepscircumferenceflexed)
+summary(ansurRight$bicepscircumferenceflexed)
+summary(ansurAmbi$bicepscircumferenceflexed)
+
+
+boxplot(antrData$bicepscircumferenceflexed~antrData$WritingPreference,
+        main = "Opseg bicepsa s ")
+
+summary(ansurLeft$bicepscircumferenceflexed)
+summary(ansurRight$bicepscircumferenceflexed)
+summary(ansurAmbi$bicepscircumferenceflexed)
+
+
+
+```
+
+
+Vizualizacija sugerira da nema značajne razlike između opsega desnog bicepsa ljevaka i dešnjaka. Vojnici koji nemaju samo jednu dominantnu ruku imaju malo manji prosjek opsega bicepsa u ovom uzorku.
+Osobe čije su mjere u pitanju rade intenzivne simetrične vježbe i važna im je snaga obje ruke. Zbog takvog načina treniranja se smanjuje razmjer između veličike dominantne i nedominantne ruke. Za generalnu populaciju bi razlika mogla biti veća.
+
+Pogledajmo raspodjelu korištenja ruku u uzorku.
+
+```{r}
+
+nrow(ansurLeft)
+nrow(ansurRight)
+nrow(ansurAmbi)
+
+counts <- table(antrData$WritingPreference)
+barplot(counts, main="Dominantna ruka", horiz=FALSE,
+  names.arg=c("Obje", "Lijeva", "Desna"))
+
+```
+
+```{r}
+require(nortest)
+qqnorm(ansurRight$bicepscircumferenceflexed, main="Biceps circumference, right-handed")
+qqline(ansurRight$bicepscircumferenceflexed, col="red", lwd=2)
+lillie.test(ansurRight$bicepscircumferenceflexed)
+
+qqnorm(ansurLeft$bicepscircumferenceflexed, main="Biceps circumference, left-handed")
+qqline(ansurLeft$bicepscircumferenceflexed, col="red", lwd=2)
+lillie.test(ansurRight$bicepscircumferenceflexed)
+
+qqnorm(ansurAmbi$bicepscircumferenceflexed, main="Biceps circumference, either hand")
+qqline(ansurAmbi$bicepscircumferenceflexed, col="red", lwd=2)
+lillie.test(ansurAmbi$bicepscircumferenceflexed)
+```
+
+Raspodjela je približno normalna, i mjerenja su nezavisna. Testirajmo jednakost varijanci.
+```{r}
+var.test(ansurLeft$bicepscircumferenceflexed, ansurRight$bicepscircumferenceflexed)
+```
+
+Nadalje pretpostavljamo da su varijance jednake. Pokrenimo t-test
+
+```{r}
+t.test(ansurLeft$bicepscircumferenceflexed, ansurRight$bicepscircumferenceflexed, var.equal=TRUE)
+```
+Ne možemo prihvaiti hipotezu da su srednje vrijednosti različite sa 95%-tnom sigurnošću.
+Usporedimo sad ambideksterne vojnike i dešnjake
+```{r}
+var.test(ansurAmbi$bicepscircumferenceflexed, ansurRight$bicepscircumferenceflexed)
+```
+
+```{r}
+t.test(ansurAmbi$bicepscircumferenceflexed, ansurRight$bicepscircumferenceflexed, var.equal=TRUE)
+```
+
+Srednje vrijednosti su dalje nego između ljevaka i dešnjaka, no i dalje ne možemo zaključiti da su različite.
+
+```{r}
+
+plot_by_hand <- function(column, main = column, xlab = column) {
+  
+  
+  
+  
+  
+  hist(ansurRight[[column]], breaks=30, main=main, xlab=xlab, ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(antrData[[column]]), max(antrData[[column]])))
+  hist(ansurLeft[[column]], breaks=30, main=main, xlab=xlab, ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(antrData[[column]]), max(antrData[[column]])), add=T)
+  #abline(v=mean(ansur.II.data[[column]]), col="red", lwd=2)
+  #abline(v=median(ansur.II.data[[column]]), col="blue", lwd=2)
+  legend(x="topright", c("Right", "Left"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+}
+
+plot_by_hand("bicepscircumferenceflexed", "Opseg bicepsa", "Opseg (mm)")
+
+
+```
+
+```{r}
+ggplot_by_property <- function(wdata) {
+    ggplot(wdata, aes(x = bicepscircumferenceflexed)) +
+  geom_histogram(aes(color = WritingPreference),
+                position = "identity", bins = 30, alpha = 0.5) +
+  scale_color_manual(values = c("#00AFBB", "#E7B800", "#004BA8")) 
+}
+
+ggplot_by_property(antrData)
+
+```
+
+```{r}
+plotajDL <- function() {
+
+
+hist(ansurRight$bicepscircumferenceflexed, breaks=30, main="Opseg bicepsa", xlab="Opseg (mm)", ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(antrData$bicepscircumferenceflexed), max(antrData$bicepscircumferenceflexed)))
+  hist(ansurLeft$bicepscircumferenceflexed, breaks=30, main="Opseg bicepsa", xlab="Opseg (mm)", ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(antrData$bicepscircumferenceflexed), max(antrData$bicepscircumferenceflexed)), add=T)
+  ##hist(ansurAmbi$bicepscircumferenceflexed, breaks=30, main="Opseg bicepsa", xlab="Opseg (mm)", ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(antrData$bicepscircumferenceflexed), max(antrData$bicepscircumferenceflexed)))
+  #abline(v=mean(ansur.II.data[[column]]), col="red", lwd=2)
+  #abline(v=median(ansur.II.data[[column]]), col="blue", lwd=2)
+  legend(x="topright", c("Ljevaci", "Dešnjaci"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+
+}
+
+plotajDL()
+```
+
+```{r}
+
+
+plotajAmbiLeft <- function() {
+
+
+hist(ansurLeft$bicepscircumferenceflexed, breaks=30, main="Opseg bicepsa", xlab="Opseg (mm)", ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(antrData$bicepscircumferenceflexed), max(antrData$bicepscircumferenceflexed)))
+  hist(ansurAmbi$bicepscircumferenceflexed, breaks=30, main="Opseg bicepsa", xlab="Opseg (mm)", ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(antrData$bicepscircumferenceflexed), max(antrData$bicepscircumferenceflexed)), add=T)
+  ##hist(ansurAmbi$bicepscircumferenceflexed, breaks=30, main="Opseg bicepsa", xlab="Opseg (mm)", ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(antrData$bicepscircumferenceflexed), max(antrData$bicepscircumferenceflexed)))
+  #abline(v=mean(ansur.II.data[[column]]), col="red", lwd=2)
+  #abline(v=median(ansur.II.data[[column]]), col="blue", lwd=2)
+  legend(x="topright", c("Ambideksterni", "Ljevaci"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+
+
+}
+
+plotajAmbiLeft()
+
+```
+
+Nismo pronašli statistički značajnu ovisnost opsega bicepsa o dominantnoj ruci. Uzrok je vjerojatno to što je pisaća ruka faktor sa komparativno malenim utjecajem. Puno veći utjecaj na veličinu desne ruke imaju drugi tjelesni parametri, primjerice težina. Gledajmo stoga kao slučajnu varijablu omjer opsega bicepsa i tjelesne težine kako bi pokušali izolirati utjecaj dominantne ruke.
+
+```{r}
+
+weightVec = ansurLeft$weightkg
+bicVec = ansurLeft$bicepscircumferenceflexed
+ratioLeft = bicVec
+for (i in 1:length(bicVec)) {
+  ratioLeft[i] <- (bicVec[i]/weightVec[i])
+}
+weightVec = ansurRight$weightkg
+bicVec = ansurRight$bicepscircumferenceflexed
+ratioRight = bicVec
+for (i in 1:length(bicVec)) {
+  ratioRight[i] <- (bicVec[i]/weightVec[i])
+}
+weightVec = ansurAmbi$weightkg
+bicVec = ansurAmbi$bicepscircumferenceflexed
+ratioAmbi = bicVec
+for (i in 1:length(bicVec)) {
+  ratioAmbi[i] <- (bicVec[i]/weightVec[i])
+}
+print("Ljevaci:")
+summary(ratioLeft)
+print("Dešnjaci:")
+summary(ratioRight)
+print("Lješnjaci:")
+summary(ratioAmbi)
+
+
+```
+
+Provjerimo stupanj normalnost
+
+```{r}
+
+
+qqnorm(ratioRight, main="Ratio, right-handed")
+qqline(ratioRight, col="red", lwd=2)
+lillie.test(ratioRight)
+
+qqnorm(ratioLeft, main="Ratio, left-handed")
+qqline(ratioLeft, col="red", lwd=2)
+lillie.test(ratioLeft)
+
+qqnorm(ratioAmbi, main="Ratio, either hand")
+qqline(ratioAmbi, col="red", lwd=2)
+lillie.test(ratioAmbi)
+
+
+```
+
+Oblik razdiobe je zadovoljavajuć za korištenje t-testa.
+
+```{r}
+
+var.test(ratioLeft, ratioRight)
+t.test(ratioLeft, ratioRight, var.equal=TRUE)
+
+
+```
+
+Zaista, opseg desnog bicepsa pokazuje statistički značajnu ovisnost o tome je li dominantna ruka lijeva ili desna uzevši u obzir težinu. Vizualizirajmo.
+
+```{r}
+
+hist(ratioRight, breaks=30, main="Opseg bicepsa / težina", xlab="Opseg bicepsa / težina (0.1 mm/kg)", ylab="Frequency",col=rgb(0,0,1,0.5), )
+
+hist(ratioLeft, breaks=30, main="Opseg bicepsa / težina", xlab="Opseg bicepsa / težina (0.1 mm/kg)", ylab="Frequency", col=rgb(1,0,0,0.5), add=T)
+
+abline(v = mean(ratioLeft), col=rgb(1,0,0,1), lwd = 3)
+abline(v = mean(ratioRight), col=rgb(0,0,1,1), lwd = 3)
+
+legend(x="topright", c("Ljevaci", "Dešnjaci"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+```
+
+Ispitajmo odnos za ambideksterne vojnike.
+
+```{r}
+
+
+var.test(ratioRight, ratioAmbi)
+t.test(ratioAmbi, ratioRight, var.equal=TRUE)
+
+
+
+```
+
+U ovom slučaju ne nalazimo statističko značajnu razliku.
+
+```{r}
+
+hist(ratioRight, breaks=30, main="Opseg bicepsa / težina", xlab="Opseg bicepsa / težina (0.1 mm/kg)", ylab="Frequency",col=rgb(0,0,1,0.5), )
+
+hist(ratioAmbi, breaks=30, main="Opseg bicepsa / težina", xlab="Opseg bicepsa / težina (0.1 mm/kg)", ylab="Frequency", col=rgb(1,0,0,0.5), add=T)
+
+abline(v = mean(ratioLeft), col=rgb(1,0,0,1), lwd = 3)
+abline(v = mean(ratioRight), col=rgb(0,0,1,1), lwd = 3)
+
+legend(x="topright", c("Ambideksterni", "Dešnjaci"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+```
+
+Koje još varijable pokazuju korelaciju s pisaćom rukom?
+Odaberimo varijable handbreadth i handcircumference kao mjere koje su povezane s rukom te bi mogle pokazati zavisnost.
+
+```{r}
+weightVec = ansurLeft$weightkg
+  vec = ansurLeft$handbreadth
+  ratioLeft = vec
+  print(length(vec))
+  for (i in 1:length(vec)) {
+    ratioLeft[i] <- (vec[i]/weightVec[i])
+  }
+  weightVec = ansurRight$weightkg
+  vec = ansurRight$handbreadth
+  ratioRight = vec
+  for (i in 1:length(vec)) {
+    ratioRight[i] <- (vec[i]/weightVec[i])
+  }
+  var.test(ratioLeft, ratioRight)
+  t.test(ratioLeft, ratioRight, var.equal=TRUE)
+  
+  
+hist(ratioRight, breaks=30, main="Širina šake / težina", xlab="Širina šake / težina (0.1 mm/kg)", ylab="Frequency",col=rgb(0,0,1,0.5), )
+
+hist(ratioLeft, breaks=30, main="Širina šake / težina", xlab="Širina šake / težina (0.1 mm/kg)", ylab="Frequency", col=rgb(1,0,0,0.5), add=T)
+
+abline(v = mean(ratioLeft), col=rgb(1,0,0,1), lwd = 3)
+abline(v = mean(ratioRight), col=rgb(0,0,1,1), lwd = 3)
+
+legend(x="topright", c("Ljevaci", "Dešnjaci"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+
+```
+
+```{r}
+weightVec = ansurLeft$weightkg
+  vec = ansurLeft$handcircumference
+  ratioLeft = vec
+  print(length(vec))
+  for (i in 1:length(vec)) {
+    ratioLeft[i] <- (vec[i]/weightVec[i])
+  }
+  weightVec = ansurRight$weightkg
+  vec = ansurRight$handcircumference
+  ratioRight = vec
+  for (i in 1:length(vec)) {
+    ratioRight[i] <- (vec[i]/weightVec[i])
+  }
+  var.test(ratioLeft, ratioRight)
+  t.test(ratioLeft, ratioRight, var.equal=TRUE)
+  
+  
+hist(ratioRight, breaks=30, main="Opseg šake / težina", xlab="Opseg šake / težina (0.1 mm/kg)", ylab="Frequency",col=rgb(0,0,1,0.5), )
+
+hist(ratioLeft, breaks=30, main="Opseg šake / težina", xlab="Opseg šake / težina (0.1 mm/kg)", ylab="Frequency", col=rgb(1,0,0,0.5), add=T)
+
+abline(v = mean(ratioLeft), col=rgb(1,0,0,1), lwd = 3)
+abline(v = mean(ratioRight), col=rgb(0,0,1,1), lwd = 3)
+
+legend(x="topright", c("Ljevaci", "Dešnjaci"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+
+  
+  
+```
+
+
+Za te varijable nalazimo ovisnost, no ne tako jaku kao za opseg bicepsa.
+
+### Zaključak
+
+Češće korištenje jedne ruke svakako do značajne mjere povećava veličinu njenih mišića. U uzorku koji je reprezentativan za cijelu populaciju bi našli jaču korelaciju jer vojnici vježbaju obje ruke podjednako i to dovodi do simetrije u veličini desne i lijeve ruke. Stupanj nesimetričnosti tijela se može koristiti kao pokazatelj uspješnosti funkcionalnog treninga. Kampovi s većom razlikom između ruku bi mogli to iskoristiti da poboljšaju trening i pojačaju snagu nedominantne strane tijela u svojih vojnika.
+
+
+## Logistički model za predviđanje pripadnika bijele ili crne rase na temelju omjera raspona ruku i visine
+
+### Motivacija
+
+Svakom obožavatelju američkog sporta poznate su brojne antropometrijske mjere koje se uzimaju u obzir prilikom evaluacije igrača. Jedna od najbitnijih mjera za procjenu igrača je raspon ruku, najviše je to naglašeno u košarci. Kako sam i sam vjerni pratitelj NBA i NFL lige primjetio sam kako u tim evaluacijama crni igrači najčešće imaju veći raspon ruku nego bijeli igrači, pogotovo u odnosu na visinu. U sljedećem odlomku slijedi analiza omjera raspona ruku i visine između bijele i crne rase. Kako bi se smanjio utjecaj dodatnih faktora, promatrati ćemo muškarce i žene odvojeno. Na kraju ćemo pristupiti izgradnji logističkog modela za predviđanje rase na temelju prije spomenutog omjera.
+
+### Istraživanje
+
+```{r}
+antrData =  read.csv("ANSUR_II_data.csv")
+```
+
+```{r}
+antrData$colorData = "black"
+antrData$colorData[antrData$DODRace != 1] = "red"
+
+require(fastDummies)
+antrData = dummy_cols(antrData, select_columns = c("Gender"))
+
+```
+
+Nakon dodavanja stupca za boju različitih rasa i stvaranju dummy varijable za prikaz spola, pristupamo odvajanju podataka na muške i ženske te izdavajanje pripadnika bijele i crne rase.
+
+```{r}
+antrData_male <- antrData[antrData$Gender_Male == 1,]
+antrData_blackwhite <- antrData_male[antrData_male$DODRace == 1 | antrData_male$DODRace == 2,]
+
+antrData_female <- antrData[antrData$Gender_Male == 0,]
+antrData_blackwhite_female <- antrData_female[antrData_female$DODRace == 1 | antrData_female$DODRace == 2,]
+
+```
+
+Nakon razdvajanja stvaramo stupac u kojem će se nalaziti omjer nad kojim ćemo vršiti analizu.
+
+```{r}
+antrData_blackwhite$spanheightratio <- antrData_blackwhite$span / antrData_blackwhite$stature
+antrData_blackwhite_female$spanheightratio <- antrData_blackwhite_female$span / antrData_blackwhite_female$stature
+```
+
+```{r}
+plot(antrData_blackwhite$spanheightratio, antrData_blackwhite$span, pch=15, xlab = 'Omjer rapsona ruku i visine', ylab = 'Raspon ruku',col=antrData_blackwhite$colorData, main = "Omjer među muškom populacijom")
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c("black", "red"), pt.cex=2, pch=15)
+
+plot(antrData_blackwhite_female$spanheightratio, antrData_blackwhite_female$span, pch=15, xlab = 'Omjer rapsona ruku i visine', ylab = 'Raspon ruku',col=antrData_blackwhite_female$colorData, main = "Omjer među ženskom populacijom")
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c("black", "red"), pt.cex=2, pch=15)
+```
+
+Dijagram raspršenja nam pruža određenu informaciju o tome kako se omjer razlikuje između pripadnika bijele i crne rase. Ipak s obzirom na broj podataka histogram će nam možda pružiti jasniji uvod u prirodu dviju distribucija.
+
+```{r}
+mean_male_white <- mean(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 1])
+mean_male_black <- mean(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 2])
+
+hist(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među muškom populacijom")
+
+hist(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_male_white, col = "black", lwd = 2)
+abline(v = mean_male_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+
+mean_female_white <- mean(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 1])
+mean_female_black <- mean(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 2])
+
+hist(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među ženskom populacijom")
+
+hist(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_female_white, col = "black", lwd = 2)
+abline(v = mean_female_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+```
+
+Iz histograma se jako lijepo vidi razlika između dvije populacije te razlika njihovih srednjih vrijednosti. Testiranje hipoteze ako je razlika tih dviju statistika statistički značajna ćemo ostaviti za kasnije, a sada kada smo se uvjerili da određena razina razlike postoji ćemo pristupiti izgradnji prvog logističkog modela. Prvi model ćemo izgraditi samo za mušku populaciju.
+
+```{r}
+antrData_blackwhite = dummy_cols(antrData_blackwhite, select_columns = c("DODRace"))
+antrData_blackwhite_female = dummy_cols(antrData_blackwhite_female, select_columns = c("DODRace"))
+```
+
+```{r}
+logitSpan <- glm(DODRace_1 ~ spanheightratio, data=antrData_blackwhite, family='binomial')
+summary((logitSpan))
+```
+
+Zasada stvari izgledaju dobro oba koeficijenta su statistički značajna, a residual deviance koja predstavlja razliku između zasićenog modela(svaki podatak ima jedan parametar) i našeg modela pokazuje značajnu razliku od null deviance koja predstavlja razliku između zasićenog modela i null modela(modela koji koristi samo jedan parametar) što se smatra poželjnim. Ipak već u sljedećem koraku uočiti ćemo bitan problem s našim modelom.
+
+```{r}
+logitSpan_probs <- predict(logitSpan, type="response")
+logitSpan_predicitions <- ifelse(logitSpan_probs > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions, antrData_blackwhite$DODRace_1))
+print(conffMatrix)
+```
+
+```{r}
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions)
+print(accuracy)
+```
+
+Ovdje nailazimo na čest problem kod logističke regresije, ne balansirani skupovi kategorija. S obzirom da je pripadnika bijele rase  skoro 5 puta više od pripadnika crne rase modelu se puno više "isplati" predviđati pripadnost bijeloj rasi nego crnoj. Naravno ako gledamo samo preciznost modela nećemo doći do tog zaključka te je bitno proučiti matricu zabune koja nam otkriva ovaj problem u našem modelu. Naime jasno vidimo
+
+```{r}
+table(antrData_blackwhite$DODRace)
+table(antrData_blackwhite_female$DODRace)
+```
+
+Isto tako je jasno da je u ženskim podacima isti problem značajno manji i ta razlika možda predstvalja temelje za zanimljivu analizu mogući uzroka ali to je van domene ove analize. 
+
+S obzirom na više nego dovoljan broj podataka umjetno ćemo stvoriti balansirane skupove tako što ćemo ispremješati redove u tablici te nausimčno izabrati retke koji će ulaziti u model. Kako bi dobili ponovljive podatke seed ćemo postaviti na fiksnu vrijednost
+
+```{r}
+equalData <- function(df){
+  size <- nrow(df[df$DODRace == 2, ])
+  count <- 0
+  indices <- c()
+  
+  
+  for(i in 1:nrow(df)){
+    if(df$DODRace[i] == 1){
+      if(count >= size){
+        indices[i] <- FALSE 
+      } else{
+        count <- count + 1
+        indices[i] <- TRUE
+      }
+    } else {
+      indices[i] <- TRUE 
+    }
+  }
+  return(indices)
+}
+```
+
+
+
+```{r}
+set.seed(42)
+
+rows <- sample(nrow(antrData_blackwhite))
+rows_female <- sample(nrow(antrData_blackwhite_female))
+
+antrData_blackwhite_shuffle <- antrData_blackwhite[rows, ]
+antrData_blackwhite_female_shuffle <- antrData_blackwhite_female[rows_female, ]
+
+indices <- equalData(antrData_blackwhite_shuffle)
+indices_female <- equalData(antrData_blackwhite_female_shuffle)
+
+antrData_blackwhite_shuffle <- antrData_blackwhite_shuffle[indices, ]
+nrow(antrData_blackwhite_shuffle[antrData_blackwhite_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhite_shuffle[antrData_blackwhite_shuffle$DODRace == 1, ])
+
+antrData_blackwhite_female_shuffle <- antrData_blackwhite_female_shuffle[indices_female, ]
+nrow(antrData_blackwhite_female_shuffle[antrData_blackwhite_female_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhite_female_shuffle[antrData_blackwhite_female_shuffle$DODRace == 1, ])
+```
+
+Nakon balansiranja broj podataka iz obije kategorije pristupamo ponovnoj konstrukciji histograma koji bi u ovom slučaju trebali biti još indikativniji.
+
+```{r}
+mean_male_white <- mean(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 1])
+mean_male_black <- mean(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 2])
+
+hist(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među muškom populacijom")
+
+hist(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_male_white, col = "black", lwd = 2)
+abline(v = mean_male_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+
+mean_female_white <- mean(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 1])
+mean_female_black <- mean(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 2])
+
+hist(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među ženskom populacijom")
+
+hist(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_female_white, col = "black", lwd = 2)
+abline(v = mean_female_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+```
+
+Sada se u histogramu jasnije vidi razlika između dviju populacija i jasnija je distribucija dviju populacija.
+
+Sada imamo jednak broj nausimčno odabranih pripadnika bijele rase kao i pripadnika crne rase. S time eliminiramo pristranost modela prema bijeloj rasi i možemo bolje proučavati kako se omjer ponaša te ćemo sad izgraditi i model za ženski dio populacije.
+
+```{r}
+logitSpan_corrected <- glm(DODRace_1 ~ spanheightratio, data=antrData_blackwhite_shuffle, family='binomial')
+summary((logitSpan_corrected))
+
+logitSpan_female <- glm(DODRace_1 ~ spanheightratio, data=antrData_blackwhite_female_shuffle, family='binomial')
+summary((logitSpan_female))
+```
+
+Sada su rezultati puno kvalitetniji, primjećujemo prvo kako je medijan reziduala jako blizu nuli što je dobar indikator da model nije pristran. Isto tako devijacija reziduala je značajno manja od devijacije nul modela za oba modela. Nadalje obije devijacije reziduala su jako blizu broju stupnjeva slobode što je dobar indikator za kvalitetu modela.
+
+
+```{r}
+logitSpan_probs_corrected <- predict(logitSpan_corrected, type="response")
+logitSpan_probs_female <- predict(logitSpan_female, type="response")
+
+logitSpan_predicitions_corrected <- ifelse(logitSpan_probs_corrected > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions_corrected, antrData_blackwhite_shuffle$DODRace_1))
+print(conffMatrix)
+
+logitSpan_predicitions_female <- ifelse(logitSpan_probs_female > 0.5, 1, 0)
+conffMatrix_female <- as.data.frame(table(logitSpan_predicitions_female, antrData_blackwhite_female_shuffle$DODRace_1))
+print(conffMatrix_female)
+```
+
+
+```{r}
+
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions_corrected)
+print(accuracy)
+
+accuracy_female <- (conffMatrix_female[1, 3] + conffMatrix_female[4, 3])/length(logitSpan_predicitions_female)
+print(accuracy_female)
+```
+
+Iako nam dolazi manja točnost nego u ne prilagodenom modelu gdje nije jednak broj elemenata svake klase treba uzeti u obzir kako točnost sama po sebi nije dobar prediktor kvalitete logističkog modela te je ovaj model neosporno kvalitetniji od prethodnog te možemo vidjeti da model postiže značajno bolju točnost od nasumičnog predviđanja i za muškarce i za žene.
+
+Sljedeći korak nam može biti dodatno filtriranje podataka s genetske strane jer DODRace stupac predstavlja osobnu preferiranu rasu. S obzirom da velika većina ljudi u ovom modernom vremenu globalizacije potječe iz različitih rasnih skupina možemo filtrirati po stupcu SubjectNumericRace koji predstavlja potpuni prikaz podrijetla osobe tako da uzmemo osobe koje su prijavile samo crnu ili bijelu rasu kao svoje podrijetlo.
+
+```{r}
+antrData_blackwhiteonly <- antrData_male[antrData_male$SubjectNumericRace == 1 | antrData_male$SubjectNumericRace == 2,]
+antrData_blackwhiteonly_female <- antrData_female[antrData_female$SubjectNumericRace == 1 | antrData_female$SubjectNumericRace == 2,]
+
+antrData_blackwhiteonly$spanheightratio <- antrData_blackwhiteonly$span / antrData_blackwhiteonly$stature
+antrData_blackwhiteonly_female$spanheightratio <- antrData_blackwhiteonly_female$span / antrData_blackwhiteonly_female$stature
+
+```
+
+
+```{r}
+rows <- sample(nrow(antrData_blackwhiteonly))
+rows_female <- sample(nrow(antrData_blackwhiteonly_female))
+
+antrData_blackwhiteonly_shuffle <- antrData_blackwhiteonly[rows, ]
+antrData_blackwhiteonly_female_shuffle <- antrData_blackwhiteonly_female[rows_female, ]
+
+indices <- equalData(antrData_blackwhiteonly_shuffle)
+indices_female <- equalData(antrData_blackwhiteonly_female_shuffle)
+
+antrData_blackwhiteonly_shuffle <- antrData_blackwhiteonly_shuffle[indices, ]
+nrow(antrData_blackwhiteonly_shuffle[antrData_blackwhiteonly_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhiteonly_shuffle[antrData_blackwhiteonly_shuffle$DODRace == 1, ])
+
+
+antrData_blackwhiteonly_female_shuffle <- antrData_blackwhiteonly_female_shuffle[indices_female, ]
+nrow(antrData_blackwhiteonly_female_shuffle[antrData_blackwhiteonly_female_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhiteonly_female_shuffle[antrData_blackwhiteonly_female_shuffle$DODRace == 1, ])
+```
+```{r}
+mean_male_white <- mean(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 1])
+mean_male_black <- mean(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 2])
+
+hist(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među muškom populacijom")
+
+hist(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_male_white, col = "black", lwd = 2)
+abline(v = mean_male_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+
+mean_female_white <- mean(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 1])
+mean_female_black <- mean(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 2])
+
+hist(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među ženskom populacijom")
+
+hist(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_female_white, col = "black", lwd = 2)
+abline(v = mean_female_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+```
+
+Zasada ne primjećujemo neku značajnu razliku iz samih histograma, ali nastavljamo s izgradnjom logističkog modela.
+
+```{r}
+antrData_blackwhiteonly_shuffle = dummy_cols(antrData_blackwhiteonly_shuffle, select_columns = c("SubjectNumericRace"))
+antrData_blackwhiteonly_female_shuffle = dummy_cols(antrData_blackwhiteonly_female_shuffle, select_columns = c("SubjectNumericRace"))
+```
+
+
+```{r}
+logitSpan_only <- glm(SubjectNumericRace_1 ~ spanheightratio, data=antrData_blackwhiteonly_shuffle, family='binomial')
+summary((logitSpan_only))
+
+logitSpan_only_female <- glm(SubjectNumericRace_1 ~ spanheightratio, data=antrData_blackwhiteonly_female_shuffle, family='binomial')
+summary((logitSpan_only_female))
+
+```
+
+I dalje ne primjećujemo značajnu razliku između filtriranih rasa i preferiranih rasa
+
+```{r}
+logitSpan_probs_only <- predict(logitSpan_only, type="response")
+logitSpan_probs_only_female <- predict(logitSpan_only_female, type="response")
+
+logitSpan_predicitions_only <- ifelse(logitSpan_probs_only > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions_only, antrData_blackwhiteonly_shuffle$SubjectNumericRace_1))
+print(conffMatrix)
+
+logitSpan_predicitions_only_female <- ifelse(logitSpan_probs_only_female > 0.5, 1, 0)
+conffMatrix_female <- as.data.frame(table(logitSpan_predicitions_only_female, antrData_blackwhiteonly_female_shuffle$SubjectNumericRace_1))
+print(conffMatrix_female)
+```
+
+
+```{r}
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions_only)
+print(accuracy)
+
+accuracy <- (conffMatrix_female[1, 3] + conffMatrix_female[4, 3])/length(logitSpan_predicitions_only_female)
+print(accuracy)
+```
+
+Vidimo kako se preciznost modela neznatno povećala ali kao što je već naznačeno preciznost nije uvijek najbolja mjera kvalitete modela. Iz priloženoga možemo vidjeti kako je preferirana rasa najčešće jednaka samoj rasi te kako bi za detaljniju analizu ovog omjera bilo potrebno detaljnije genetsko ispitivanje podrijetla koje je van domene ovog istraživanja.
+
+Kao završnu zanimljivost testirati ćemo naš model na neviđenim podacima. Podaci su prikupljeni iz službenih mjera igrača američkog nogometa prilikom ulaska u ligu. Podaci su prikupljeni sa sljedećih stranica:
+
+https://www.cbssports.com/nfl/draft/news/nfl-combine-2020-tracker-measurements-results-of-the-best-individual-performances-from-indianapolis/
+https://nflcombineresults.com/playerpage.php?i=22415
+
+Podatke učitavamo i testiramo naš model na njima
+
+```{r}
+testingData = read.csv("AddedData.csv")
+
+testingData$spanheightratio <- testingData$span/testingData$height
+```
+
+```{r}
+logitSpan_probs_testing <- predict(logitSpan_only, newdata = testingData ,type="response")
+
+logitSpan_predicitions_testing <- ifelse(logitSpan_probs_testing > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions_testing, testingData$race))
+print(conffMatrix)
+
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions_testing)
+print(accuracy)
+```
+
+Vidimo kako smo na ovom malom skupu podataka postigli točnost od 80%. Naravno ovako mali skup za testiranje nije relevantan za izvlačenje neki ozbiljnijih zaključaka ali je lijepo vidjet kako naš model radi na dosad neviđenim podacima.
+
+
+### Zaključak
+
+Izgradili smo logistički model za predviđanje rase osobe na temelju omjera raspona ruku i visine. Nadalje pokazano je postojanje razlike između bijele i crne rase u pogledu ovog omjera što predstavlja zanimljivu činjenicu s antropološkog i evolucijskog stajališta. Postojanje ove razlike bi moglo biti korisno proizvođačima vojne opreme. Isto tako ova razlika je vjerojatno jedan od razloga dominacije pripadnika crne rase u sportovima u kojima raspon ruku igra značajnu ulogu, kao što je košarka.
+
+
+## Određivanje optimalnih mjera kaciga na temelju antopometrijskih podataka američke
+
+### Motivacija
+
+Motivacija za ovaj problem je prilično očita. Kao i bilo koji poslodavac koji je zadužen za opremanje svojih vojnika i vojsku zanima koliko je koje opreme potrebno te mjere same opreme. Određivanje broja potrebnih mjera kaciga i veličine tih potrebnih mjera svakako spada pod prije spomenuti interes vojske.
+
+### Istraživanje
+
+Mjere kaciga trebale bi se odrediti na temelju antopometrijskih podataka koji imaju veze s glavom. Izdvojimo iz skupa podataka antropometrijske mjere koje bi mogle utjecati na odluku kategorija veličina. Te mjere su:
+
+- bitragion chin arc - duljina linije koja se proteže od vrha jednog uha do vrha drugog uha, a putuje po licu prolazeći vrhom brade
+
+- bitragion submandibular arc - duljina linije od vrha jednog uha do vrha drugog uha, ali ovaj put ispod vilice (kao zaštitni remen za kacigu)
+
+- bizygomatic breadth - maksimalna horizontalna širina glave s prednje strane, od najispupčenijeg vrha jednog obraza do istog tog vrha drugo obraza
+
+- ear breadth - maksimalna širina desnog uha okomito u odnosu na pravac koji prati uho po duljini
+
+- ear length - maksimalna duljina desnog uha
+
+- ear protrusion - maksimalna udaljenost između vanjskog ruba uha i glave ("mjera stršenja uha")
+
+- head breadth - maksimalna horizontalna širina glave, mjerena između točaka glave koje se nalaze direktno iznad gornjeg ruba uha
+
+- head circumference - maksimalan opseg glave, mjeren po liniji koja se proteže od točke iznad gornjeg ruba uha, preko čela, do točke iznad gornjeg ruba uha na drugoj strani i preko najispupčenijeg stražnjeg dijela glave
+
+- head length - maksimalna duljina glave, od najispupčenije točke na čelu do najispupčenije točke na stražnjem dijelu glave
+
+- menton-sellion lenght - udaljenost od podnožja nosa između obrvi do najispupčenijeg dijela brade
+
+napomena: sve veličine izražene su u milimetrima
+
+
+```{r data}
+ansur.II.data = read.csv("ANSUR_II_data.csv")
+head = select(ansur.II.data, "bitragionchinarc", "bitragionsubmandibulararc", "bizygomaticbreadth", "earbreadth", "earlength", "earprotrusion", "headbreadth", "headcircumference", "headlength", "mentonsellionlength")
+summary(head)
+sapply(head, class)
+```
+
+
+Vidimo da su sve varijable numeričkog tipa. Za određivanje kategorija veličina kacige, izdvojimo dodatno iz skupa podataka samo neke, koji se čine najznačajnijima za veličinu kacige. Potrebni su nam duljina, širina i opseg glave za određivanje mjera same kacige. Ostale varijable nisu toliko značajne u određivanju veličina kacige, stoga ćemo u skupu podataka zadržati samo navedene.
+
+
+```{r}
+helmet = select(head, "headbreadth", "headcircumference", "headlength")
+summary(helmet)
+```
+
+
+Provedimo deskriptivnu analizu varijabli prema kojima modeliramo veličine kaciga.
+
+
+```{r}
+plot_summary <- function(data, main, xlab) {
+  layout(mat=matrix(c(1,2),2,1,byrow=TRUE), height=c(1,8))
+  par(mar=c(0, 3.1, 1.1, 2.1))
+  boxplot(data, horizontal=TRUE, xaxt="n", frame=FALSE, ylim=c(min(data), max(data)))
+  par(mar=c(4, 3.1, 1.1, 2.1))
+  hist(data, breaks=30, main=main, xlab=xlab, ylab="Frequency", xlim = c(min(data), max(data)))
+  abline(v=mean(data), col="red", lwd=2)
+  abline(v=median(data), col="blue", lwd=2)
+  legend(x="topright", c("Mean", "Median"), col=c("red", "blue"), lwd=c(2,2))
+}
+
+plot_summary(data = helmet$headbreadth, main="Head breadth", xlab="Breadth [mm]")
+plot_summary(data = helmet$headcircumference, main="Head circumference", xlab="Circumference [mm]")
+plot_summary(data = helmet$headlength, main="Head length", xlab="Length [mm]")
+```
+
+
+Iz vizualizacije varijabli lijepo se vidi da su sve distribucije unimodalne i simetrične, s relativno uskim interkvartilnim rangom u odnosu na širinu distribucije.
+
+Za određivanje veličina kacige, recimo da za svakog vojnika treba postojati kaciga koja odgovara njegovim mjerama glave, s maksimalnim dozvoljenim odstupanjem od 2 cm. Uz to, valja naglasiti da je puno veći problem kaciga koja je premala nego kaciga koja je prevelika, jer premalu kacigu vojnik fizički ne može obući. Zato ćemo kao najveću veličinu uzeti kacigu koja odgovara najvećim vrijednostima varijabli koje predstavljaju mjere glave.
+
+Valja odrediti i broj različitih veličina kacige. Varijabli s najvećim rangom bit će potrebno najviše različitih veličina kacige, dok se ostale varijable s manjim rangom mogu uže podijeliti, radi ravnomjernosti podjele.
+
+Bitna pretpostavka ovog postupka određivanja veličina kaciga je da su varijable koje predstavljaju mjere glave međusobno ovisne. Na primjer, ako napravimo 5 različitih veličina kaciga, te ako je nekom vojniku opseg glave u rangu 3. veličine, znači li to da će mu nužno i širina i duljina glave odgovarati kategoriji 3. veličine? 
+
+Smisleno je pretpostaviti da postoji značajna korelacija između tih varijabli, konkretno da duljina i širina glave dobro određuju opseg. Ako glavu modeliramo kao elipsoid i pretpostavimo da su sve varijable izmjerene u istoj ravnini, onda u toj ravnini opseg glave predstavlja opseg elipse, čija glavna os leži na pravcu duž kojeg je izmjerena duljina glave, a sporedna os leži na pravcu duž kojeg je izmjerena širina. 
+
+U egzaktnom slučaju, opseg elipse može se izračunati pomoću integrala 
+$$4a\int_{a}^{2\pi} \sqrt{1-e^2 \sin^2{\theta}} \,d\theta$$
+, gdje je a duljina glavne poluosi (u ovom slučaju polovica duljine glave), a $e = \sqrt{a^2 - b^2}$.
+
+Iz formula je vidljivo da opseg definitivno ovisi o objema poluosima, ali varijable koje imamo ne odgovaraju egzaktnom slučaju, kao prvo zato što glava u stvarnom svijetu nije savršeni elipsoid, a kao drugo zato što nisu sve veličine izmjerene u istoj ravnini. Zato ćemo pomoću linearne regresije probati odrediti koliko u stvarnosti duljina i širina glave određuju opseg.
+
+Pogledajmo dijagram raspršenja posebno za duljinu i opseg, te širinu i opseg.
+
+
+```{r}
+plot(x = helmet$headlength, y=helmet$headcircumference, xlab="Duljina glave", ylab="Opseg glave")
+plot(x = helmet$headbreadth, y=helmet$headcircumference, xlab="Širina glave", ylab="Opseg glave")
+```
+
+
+U oba slučaja vidljiv je pozitivan trend, te se čini da duljina glave puno jasnije opisuje opseg glave nego njena širina, ali obje su varijable dobri kandidati za regresore.
+
+Da bismo vidjeli koliko su varijable značajne u procjenjivanju opsega glave, napravimo jednostavnu regresiju.
+
+
+```{r}
+
+fit.length = lm(headcircumference~headlength, data=helmet)
+#plot(helmet$headlength, helmet$headcircumference)
+#line(helmet$headlength,fit.length$fitted.values) #why is this not working tho
+summary(fit.length)
+
+fit.breadth = lm(headcircumference~headbreadth, data=helmet)
+summary(fit.breadth)
+
+```
+
+
+Prije interpretacije rezultata modela, valja provjeriti pretpostavke o normalnosti reziduala i homogenosti varijance.
+
+
+```{r}
+check_assumptions <- function(model) {
+  plot(model$residuals)
+  hist(model$residuals, main="Histogram reziduala")
+  hist(rstandard(model), main="Histogram standardiziranih reziduala")
+  qqnorm(rstandard(model), main="QQ plot")
+  qqline(rstandard(model), col="red")
+  plot(model$fitted.values, model$residuals)
+  require(nortest)
+  lillie.test(rstandard(model))
+}
+
+check_assumptions(fit.length)
+check_assumptions(fit.breadth)
+```
+
+
+Provjera pretpostavki modela daje podnošljive rezultate. Iako histogrami, pogotovo za reziduale modela u kojem je regresor duljina glave, imaju jako dugačak desni rep, te Lillieforsov test normalnosti daje jako loše rezultate, probat ćemo svejedno statistički interpretirati rezultate, jer t-test, koji se koristi za procjenu parametara modela, dobro podnosi ne-normalnost.
+
+Modeli su zadovoljavajući, duljina glave dosta dobro određuje opseg glave, a širina nešto manje, ali definitivno nezanemarivo.
+
+Također je zanimljivo uočiti da u se u dijagramu reziduala po indeksima jasno vidi razlika između prve trećine podataka i ostatka. Razlog ove pojave je jednostavan - podatci su veoma osjetljivi na spol, a otprilike prva trećina podataka predstavlja mjere ženskih vojnih snaga, dok su ostataj mjere muških vojnih snaga. Prikažimo to grafički:
+
+
+```{r}
+
+males <- ansur.II.data[ansur.II.data$Gender=="Male",]
+females <- ansur.II.data[ansur.II.data$Gender=="Female",]
+
+plot_by_gender <- function(column, main = column, xlab = column) {
+  #summary(females[[column]])
+  #summary(males[[column]])
+  hist(males[[column]], breaks=30, main=main, xlab=xlab, ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(ansur.II.data[[column]]), max(ansur.II.data[[column]])))
+  hist(females[[column]], breaks=30, main=main, xlab=xlab, ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(ansur.II.data[[column]]), max(ansur.II.data[[column]])), add=T)
+  #abline(v=mean(ansur.II.data[[column]]), col="red", lwd=2)
+  #abline(v=median(ansur.II.data[[column]]), col="blue", lwd=2)
+  legend(x="topright", c("Female", "Male"), col=c(rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex = 2, pch = 15)
+}
+
+plot_by_gender("headlength", main="Head length", xlab="Length [mm]")
+plot_by_gender("headbreadth", main="Head breadth", xlab="Length [mm]")
+```
+
+
+Kao što se vidi na histogramima, i duljina i širina glave imaju vrlo različita očekivanja s obzirom na spol. Kad bi se to uzelo u obzir prilikom modeliranja, možda bi se dobili nešto precizniji rezultati, no time se za sada nećemo zamarati.
+
+Provjerimo koliko dobro duljina i širina glave zajedno opisuju opseg glave. Prije procjene parametara, provjerimo koliko su duljina i širina glave korelirane. Očekivano je da jesu korelirane, ali svejedno obje utječu na opseg glave i obje će biti bitne za procjenu parametara modela.
+
+
+```{r}
+cor(ansur.II.data$headlength, ansur.II.data$headbreadth)
+cor.test(ansur.II.data$headlength, ansur.II.data$headbreadth)
+```
+
+
+Postoji korelacija, no ona nije prevelika. Provedimo višestruku regresiju.
+
+
+```{r}
+fit.multi = lm(headcircumference~headlength+headbreadth, ansur.II.data)
+summary(fit.multi)
+```
+Provjerimo i da pretpostavke modela nisu previše narušene.
+
+```{r}
+check_assumptions(fit.multi)
+```
+
+
+Normalnost reziduala je vidljivo lošija nego kod linearnih modela, što se pogotovo vidi u desnom repu distribucije reziduala. Također, dijagram reziduala u ovisnosti o procjenjenim vrijednostima modela pokazuje da reziduali postaju "gušći" s većim vrijednostima. Ovo se može interpretirati na način da duljina i širina glave bolje opisuju opseg glave kod manjih opservacija, dok se kod većih opsega glave trebaju uzeti u obzir dodatni parametri koji nisu procjenjeni modelom.
+
+Prije završetka modeliranja kaciga, provjerimo još jednu sitnicu. Naime, u opisu postupaka mjerenja ovih podataka, navedeno je kako je u mjerenje duljine glave, a i opsega glave, ulazila kosa vojnih snaga. Za očekivati je da žene u prosjeku imaju frizure većeg obujma, što unosi dodatnu varijancu u mjerenja koja ne može biti objašnjena "fiksnim" antropometrijskim značajkama kao što su duljina i širina same lubanje, koje su praktički nepromjenjive u odrasloj dobi. Provjerimo kako se ponašaju varijance duljine i širine glave s obzirom na spol.
+
+
+```{r}
+var(females$headlength)
+var(males$headlength)
+
+var(females$headbreadth)
+var(males$headbreadth)
+```
+
+
+Vidimo da je varijanca širine glave veća u muškaraca, ali duljina glave je raspršenija kod žena, što bi se moglo objasniti kosom. Ako pretpostavimo da muškarci prosječno imaju manje kose, i da nezanemarivi dio varijance u duljini glave ženskih vojnih snaga dolazi iz kose, model koji procjenjuje opseg glave na temelju duljine i širine trebao bi davati bolje rezultate za muškarce, a lošije za žene. Provjerimo ove hipoteze.
+
+
+```{r}
+
+fit.females = lm(headcircumference~headlength+headbreadth, ansur.II.data[ansur.II.data$Gender=="Female",])
+summary(fit.females)
+check_assumptions(fit.females)
+
+fit.males = lm(headcircumference~headlength+headbreadth, ansur.II.data[ansur.II.data$Gender=="Male",])
+summary(fit.males)
+check_assumptions(fit.males)
+```
+
+
+Pretpostavke su dale jako dobre rezultate. Model se ponaša puno bolje ako se primjeni samo na podatke muškaraca, te objašnjava čak $85%$ varijance u opsegu glave, što je jako dobar rezultat, pogotovo s obzirom na to da se model bazira samo na dva regresora. S druge strane, za podatke žena, model se ponaša očekivano lošije, što je vjerojatno zbog toga što varijanca zbog kose dolazi više do izražaja.
+
+Prepostavimo da će vojnici noseći kacige morati imati frizuru koja ih neće značajno ometati u nošenju kacige. Drugim riječima, vodeći se višestrukom regresijom nad podatcima muških vojnih snaga, pretpostavimo da su duljina, širina i opseg glave međusobno usklađene mjere, te da ako vojniku odgovara neka veličina kacige s obzirom na opseg, analogno će mu odgovarati s obzirom na duljinu i širinu.
+
+Pogledajmo koja od ovih mjera ima najveći rang.
+
+
+```{r}
+length.range = max(ansur.II.data$headlength) - min(ansur.II.data$headlength)
+breadth.range = max(ansur.II.data$headbreadth) - min(ansur.II.data$headbreadth)
+circumference.range = max(ansur.II.data$headcircumference) - min(ansur.II.data$headcircumference)
+print(length.range)
+print(breadth.range)
+print(circumference.range)
+
+```
+
+
+### Zaključak 
+
+Očekivano, opseg glave ima najveći rang, ali je i najmanje osjetljiv na veličinu kacige(krugu kojem se polumjer poveća za 1 cm, opseg se poveća za $2\pi$). Zato ćemo uzeti duljinu glave kao najbitniju mjeru. Ako rang od 57 mm podijelimo na 4 dijela, dobijemo 4 različite veličine kaciga čija se duljina razlikuje za 19 mm. To znači da će, u najgorem slučaju, vojnik imati 9.5 mm "praznog prostora" s prednje i stražnje strane kacige, što je potpuno prihvatljivo. Ostale mjere analogno podijelimo na 4 jednaka dijela i konačno dobivamo sljedeće veličine kaciga:
+
+
+```{r}
+length.inc = length.range / 3
+breadth.inc = breadth.range / 3
+circumference.inc = circumference.range / 3
+
+lengths = c(min(ansur.II.data$headlength), min(ansur.II.data$headlength) + length.inc, max(ansur.II.data$headlength) - length.inc, max(ansur.II.data$headlength))
+breadths = c(min(ansur.II.data$headbreadth), min(ansur.II.data$headbreadth) + breadth.inc, max(ansur.II.data$headbreadth) - breadth.inc, max(ansur.II.data$headbreadth))
+circumferences = c(min(ansur.II.data$headcircumference), min(ansur.II.data$headcircumference) + circumference.inc, max(ansur.II.data$headcircumference) - circumference.inc, max(ansur.II.data$headcircumference))
+
+helmets = data.frame("Veličina"=c("S", "M", "L", "XL"),  "Duljina kacige [mm]" = lengths, "Širina kacige [mm]" = breadths, "Opseg kacige [mm]" = circumferences)
+print(helmets)
+```
+
+##Analiza razlike u težini između američkih vojarni
+
+### Motivacija
+Težina može biti zanimljiv indikator raznih proces u ljudskom tijelu. Od prehrane do količine treninga, analiza težina može pokazati zanimljive rezultate između vojarni
+
+### Istraživanje
+
+```{r}
+ansur = read.csv("ANSUR_II_data.csv")
+
+uniqueCamps = unique(ansur$Installation)
+
+attributes = names(ansur)
+
+numByCamp = c()
+
+```
+
+```{r}
+for (camp in uniqueCamps) {
+  inCamp = ansur[ which(ansur$Installation==camp),]
+  ##ansurByCamps.append(inCamp);
+  
+  if (nrow(inCamp) < 50) {
+    next
+  }
+  exceptCamp = ansur[ which(ansur$Installation!=camp),]
+  
+  hist(exceptCamp$weightkg, breaks=100, main=paste(camp, " po težini"), xlab="Težina", ylab="Frequency",col=rgb(0,0,1,0.5), xlim = c(min(ansur$weightkg), max(ansur$weightkg)))
+      
+  hist(inCamp$weightkg, breaks=100, main=paste(camp, " po težini"), xlab="Težina", ylab="Frequency", col=rgb(1,0,0,0.5), xlim = c(min(ansur$weightkg), max(ansur$weightkg)), add=T)
+      
+      
+}
+```
+
+
+Iz histograma težine je vidljivo koliko neki kampovi imaju raličiti broj ispitanika. Za daljnu analizu izabrati ćemo kampove s najvećim brojem pripadnika.
+
+```{r}
+table(ansur$Installation)
+```
+
+Vidimo kako su najveći kampovi vojnika Camp Shelby, Fort Bliss i Fort Gordon. Za daljnu analizu srednje vrijednosti težine ćemo koristiti upravo ta tri kampa.
+
+
+```{r}
+fortGordon = ansur[ansur$Installation=="Fort Gordon", ]
+fortBliss = ansur[ansur$Installation=="Fort Bliss", ]
+campShelby = ansur[ansur$Installation=="Camp Shelby", ]
+
+hist(campShelby$weightkg, breaks=50, main="Usporedba težina među kampovima", xlab="Težina", ylab="Frequency",col=rgb(0,0,1,0.5))
+      
+hist(fortBliss$weightkg, breaks=50, col=rgb(1,0,0,0.5), add=T)
+
+hist(fortGordon$weightkg, breaks=50, col=rgb(0,1,0,0.5), add=T)
+
+abline(v = mean(campShelby$weightkg), col = rgb(0,0,1), lwd = 2)
+abline(v = mean(fortGordon$weightkg), col = rgb(0,1,0), lwd = 2)
+abline(v = mean(fortBliss$weightkg), col = rgb(1,0,0), lwd = 2)
+
+legend('topright', legend = c("Fort Gordon", "Fort Bliss", "Camp Shelby"), col = c(rgb(0,1,0,0.5), rgb(1,0,0,0.5), rgb(0,0,1,0.5)), pt.cex=2, pch=15)
+```
+
+Vidimo kako postoji određena razlika između srednjih vrijednosti tri najveća kampa. Ostaje nam za smanjiti uzorke na veličinu najmanjeg uzorka i provesti analizu.
+
+```{r}
+set.seed(42)
+
+row_shelby <- sample(nrow(campShelby))
+row_gordon <- sample(nrow(fortGordon))
+row_bliss <- sample(nrow(fortBliss))
+
+campShelby <- campShelby[row_shelby, ]
+fortGordon <- fortGordon[row_gordon, ]
+fortBliss <- fortBliss[row_bliss, ]
+
+campShelby <- campShelby[1:nrow(fortGordon),]
+fortBliss <- fortBliss[1:nrow(fortGordon),]
+
+nrow(campShelby)
+nrow(fortBliss)
+nrow(fortGordon)
+```
+
+Nakon nasumičnog balansiranja skupova podataka provodimo analizu varijance kako bi provjerili pretpostavke t-testa za analizu jednakosti dviju srednjih vrijednosti
+
+```{r}
+var.test(fortGordon$weightkg, fortBliss$weightkg)
+
+var.test(fortGordon$weightkg, campShelby$weightkg)
+
+var.test(campShelby$weightkg, fortBliss$weightkg)
+
+```
+
+Iz varijance možemo zaključiti kako za Fort Gordon ne možemo koristiti t-test u kojem uzimamo da su nam varijance jednake. S druge strane F-test između Fort Blissa i Camp Shelbya ima p vrijednost 0.7767 te sa velikom sigurnošću možemo tvrditi da su varijance jednake.
+
+```{r}
+t.test(fortGordon$weightkg, fortBliss$weightkg, alternative = "two.sided", var.equal = FALSE)
+t.test(fortGordon$weightkg, campShelby$weightkg, alternative = "two.sided", var.equal = FALSE)
+t.test(campShelby$weightkg, fortBliss$weightkg, alternative = "two.sided", var.equal = TRUE)
+```
+
+T-testom u sva tri slučaja odbacujemo $H_0$ = Kampovi imaju jednaku srednju vrijednost težine.
+
+
+### Zaključak
+Odbacivanje nulte hipoteze nam govori kako postoji ne zanemariva razlika između najvećih kampova američke vojske u težini. Takav zaključak otvara područje za dodatna istraživanja uzroka postojanja te razlike ali takvo istraživanje je van domene ovog projekta.
+
+## Zaključak
+
+Nakon provedenih svih analiza stvarno možemo reći da smo došli do nekih neočekivanih otkrića. Za kraj važno je napomenuti kako svi ovdje predstavljeni modeli i analize nipošto nisu dobar predstavnik općenite ljudske populacije. Pogotovo kada se uzme u obzir fizička specifičnost koju nosi profesija vojnika.
+
+

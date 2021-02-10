@@ -1,0 +1,317 @@
+---
+title: Model za procjenu kilaže vojnika iz antopometrijskih podataka američke
+  vojske
+author: "dariodekovic"
+date: "01/17/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Model za procjenu kilaže vojnika iz dostupnih podataka
+
+## Motivacija
+
+O tjelesnoj težini ovise brojni postupci u medicini. Jedan od najvažnijih postupaka u modernoj medicini je anestezija, a doza anestetika ovisi primarno o težini osobe koja ju prima. Naravno, u nekim situacijama vaga nije dostupna, pogotovo kada pričamo o situacijama u kojima se najčešće nalazi vojska. Zato smatramo kako bi korist modela koji uspješno predviđa težinu osobe na temelju podataka koji se mogu dobiti najobičnijim metrom velika.
+
+```{r}
+antrData =  read.csv("ANSUR_II_data.csv")
+```
+
+Prvi korak će nam biti izbor i vizualizacija izabranih parametara.
+Inicijalni izbor parametara je moja slobodna procjena koji parametri bi
+mogli imati značajan utjecaj na kilažu vojnika uzimajući u obzir dostupnost tih podataka jednostavnim krojačkim metrom i ispitivanjem. Naravno konačni izbor 
+parametara će ovisiti o performansama modela. 
+
+```{r}
+plot(antrData$stature, antrData$weightkg, xlab = "Težina", ylab = "Visina",
+     main = "Distribucija težina u ovisnosti o visini")
+plot(antrData$Age, antrData$weightkg, xlab = "Težina", ylab = "Dob",
+     main = "Distribucija težina u ovisnosti o dobi")
+plot(antrData$chestcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg prsnog koša",
+     main = "Distribucija težina u ovisnosti o opsegu prsnog koša")
+plot(antrData$waistcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg struka",
+     main = "Distribucija težina u ovisnosti o opsegu struka")
+plot(antrData$thighcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg bedra",
+     main = "Distribucija težina u ovisnosti o opsegu bedra")
+plot(antrData$bicepscircumferenceflexed, antrData$weightkg, xlab = "Težina", ylab = "Opseg bicepsa",
+     main = "Distribucija težina u ovisnosti o opsegu bicepsa")
+boxplot(antrData$weightkg~antrData$Gender, xlab = "Spol", ylab = "Težina",
+        main = "Distribucija težina u ovisnosti o spolu")
+```
+
+Vidimo da većina izabranih varijabli na grafovima pokazuje jasnu zavisnost s kilažom.
+Varijabla koja ne pokazuje lijepi linearni trend je dob(Age) ispitanika. Sada pristupamo kostrukciji jednostavnih modela linearne regresije za svaki od izabranih parametara.
+
+```{r}
+#Priprema kategorijskih varijabli
+
+require(fastDummies)
+antrData = dummy_cols(antrData, select_columns = c("Gender"))
+```
+
+```{r}
+fitHeight = lm(weightkg ~ stature, data = antrData)
+fitAge = lm(weightkg ~ Age, data = antrData)
+fitChest = lm(weightkg ~ chestcircumference, data = antrData)
+fitWaist = lm(weightkg ~ waistcircumference, data = antrData)
+fitThigh = lm(weightkg ~ thighcircumference, data = antrData)
+fitBiceps = lm(weightkg ~ bicepscircumferenceflexed, data = antrData)
+fitGender = lm(weightkg ~ Gender_Male, data = antrData)
+
+plot(antrData$stature, antrData$weightkg, xlab = "Težina", ylab = "Visina",
+     main = "Distribucija težina u ovisnosti o visini")
+lines(antrData$stature, fitHeight$fitted.values, col = 'red')
+
+plot(antrData$Age, antrData$weightkg, xlab = "Težina", ylab = "Dob",
+     main = "Distribucija težina u ovisnosti o dobi")
+lines(antrData$Age, fitAge$fitted.values, col = 'red')
+
+plot(antrData$chestcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg prsnog koša",
+     main = "Distribucija težina u ovisnosti o opsegu prsnog koša")
+lines(antrData$chestcircumference, fitChest$fitted.values, col = 'red')
+
+plot(antrData$waistcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg struka",
+     main = "Distribucija težina u ovisnosti o opsegu struka")
+lines(antrData$waistcircumference, fitWaist$fitted.values, col = 'red')
+
+plot(antrData$thighcircumference, antrData$weightkg, xlab = "Težina", ylab = "Opseg bedra",
+     main = "Distribucija težina u ovisnosti o opsegu bedra")
+lines(antrData$thighcircumference, fitThigh$fitted.values, col = 'red')
+
+plot(antrData$bicepscircumferenceflexed, antrData$weightkg, xlab = "Težina", ylab = "Opseg bicepsa",
+     main = "Distribucija težina u ovisnosti o opsegu bicepsa")
+lines(antrData$bicepscircumferenceflexed, fitBiceps$fitted.values, col = 'red')
+
+plot(antrData$Gender_Male, antrData$weightkg,  xlab = "Težina", ylab = "Spol",
+        main = "Distribucija težina u ovisnosti o spolu")
+lines(antrData$Gender_Male, fitGender$fitted.values, col = "red")
+
+
+```
+
+```{r}
+summary(fitHeight)
+
+summary(fitAge)
+
+summary(fitChest)
+
+summary(fitWaist)
+
+summary(fitThigh)
+
+summary(fitBiceps)
+
+summary(fitGender)
+```
+
+Univarijatnim modelima za sve inicijalno izabrane varijable vidimo kako je inicijalni izbor parametara bio zadovoljavajući. T testovi nad dobivenim koeficijentima pokazuju visoku razinu značajnosti, a koeficijent determinacije R^2 objašnjava dobar dio varijance u podacima. Univarijatni modeli koji ne postižu zadovoljavajuće rezultate su dob i spol. $R^2$ vrijednost u modelu u kojem je regresor dob je 0.05302 što ukazuje na to da objašnjava jako mali dio varijance u podacima. Isto tako spol ima malu $R^2$ vrijednost te ćemo u daljnoj analizi razmotriti ako nam se više isplati imati odvojene linarne modele za muškarce i žene.
+
+```{r}
+#Provjera normalnosti
+hist(fitHeight$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom visina")
+plot(fitHeight, which = 1)
+
+hist(fitAge$residuals,  xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom dob")
+plot(fitAge, which = 1)
+
+hist(fitChest$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg prsnog koša")
+plot(fitChest, which = 1)
+
+hist(fitWaist$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg struka")
+plot(fitWaist, which = 1)
+
+hist(fitThigh$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg bedra")
+plot(fitThigh, which = 1)
+
+hist(fitBiceps$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom opseg bicepsa")
+plot(fitBiceps, which = 1)
+
+hist(fitGender$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorom spol")
+plot(fitGender, which = 1)
+```
+
+Iz histograma vidimo kako distribucija reziduala nema teških repova i kako izgleda realtivno normalno distribuirano tako da možemo iz toga ako uzmemo u obzir robusnost t-testa na normalnost zaključiti kako je početna nužna pretpostavka o normalnosti distribucija zadovoljena.Isto tako je bitna pretpostavka o homogenosti varijanci modela. Iz grafova reziduala i fitanih vrijednosti vidimo kako u većini slučajeva pretpostavka vrijedi. Opsezi pokazuje određenu zavisnost koja bi se mogla objasniti varijacijama u spolu. S tim idejama krećemo u daljnu analizu u kojoj ćemo konstruirati multivarijatni regresijski model za predviđanje težine.
+
+Ipak prije nastavka moramo proučiti neke pretpostavke modela. Kako imamo 4 regresora koja se tiču opsega dijelova ljudskog tijela za očekivati je kako bi ti regresori mogli biti jako korelirani i samim time u međusobnom prisutstvu smanjiti svoju značajnost u modelu.
+
+```{r}
+cor(cbind(antrData$waistcircumference, antrData$bicepscircumferenceflexed, antrData$chestcircumference,
+                      antrData$thighcircumference, antrData$stature, antrData$Age))
+
+```
+
+Kao što je i očekivano regresori koji se tiču opsega su međusobno jako korelirani, tako da, prije njihovog uključivanja u ukupni model, ćemo konstruirati model koji se sastoji samo od ta 4 regresora.
+
+```{r}
+fitCircumference = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference, data = antrData)
+
+summary(fitCircumference)
+```
+
+Suprotno očekivanjima svi koeficijenti uz regresore se razlikuju od nule uz zanemarivo malu p vrijednost. Sami model objašnjava preko 91% varijance u podacima. Možda najbitnija činjenica je kako je $R^2_{adj}$ neznatno manji od $R^2$ što je dobar indikator da ne koristimo suvišne regresore u modelu.
+
+```{r}
+hist(fitCircumference$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela s regresorima koji imaju veze s opsegom")
+hist(rstandard(fitCircumference), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela s regresorima koji imaju veze s opsegom")
+
+plot(fitCircumference, which = 1)
+
+qqnorm(rstandard(fitCircumference))
+qqline(rstandard(fitCircumference))
+
+require(nortest)
+lillie.test(rstandard(fitCircumference))
+```
+
+Ovaj model pokazuje jako dobre rezultate i vidimo kako je pretpostavka o normalnosti zadovoljena s obzirom da histogram ima lijep oblike i Q-Q graf nema teške repove. Vizualne pretpostavke dodatno potvrđuje LIllieforsov test na normalnost u kojem na relativno velika p vrijednost govori kako ne možemo odbacit $H_0$ = Podaci dolaze iz normalne distribucije. S druge strane pretpostavka o homogenosti varijance pokazuje jasnu polinomijalnu(kvadratnu) zavisnost.
+
+U slijedećem koraku nam preostaje konstruirati model za sve prethodno spomenute regresore.
+
+```{r}
+fitMulti = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature + Age + Gender_Male, data = antrData)
+
+summary(fitMulti)
+```
+
+Ovaj model isto tako postiže i više nego zadovoljavajuće rezultate. Svi koeficijenti su statistički značajni te je $R^2_{adj} = R^2$ što nam ukazuje na to da nemamo suvišnih regresora. Nadalje vrijednosti $R^2{adj}$ i $R^2$ je 0.9733 što nam govori kako model objašnjava 97.33% varijance u podacima. Preostaje nam ispitati pretpostavku o normalnosti. 
+
+```{r}
+hist(fitMulti$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima")
+hist(rstandard(fitMulti), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima")
+
+plot(fitMulti, which = 1)
+
+qqnorm(rstandard(fitMulti))
+qqline(rstandard(fitMulti))
+
+require(nortest)
+lillie.test(rstandard(fitMulti))
+```
+
+Vidimo kako nam unatoč povećanoj $R^2$ vrijednosti pretpostavka o normalnostiviše ne vrijedi. Tu su najindikativniji Q-Q graf i Lillieforsov test. Q-Q plot ima težak rep u gornjim kvartilima, a Lillieforsov test izbacuje jako malu p vrijednost što nam nalaže odbacivanje $H_0$ = "Podaci dolaze iz normalne distribucije". Nadalje pretpostavka o homogenosti varijance nije zadovoljena s obzirom da residuali i dalje pokazuju jasan polinomijalni trend. Sada bi se mogli pozvati na robusnost t-testa na normalnost ali iz prethodnih analiza na ovom projektu znamo koliko varijacije unose razlike koje postoje među spolovima. Stoga ćemo izgraditi dva odvojena model za muškarce i žene te analizirati kako to utječe na normalnost i homogenost varijanci. 
+
+
+```{r}
+antrData_male <- antrData[antrData$Gender_Male == 1,]
+antrData_female <- antrData[antrData$Gender_Male == 0,]
+```
+
+```{r}
+fitMulti_male = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature + Age, data = antrData_male)
+
+summary(fitMulti_male)
+
+fitMulti_female = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature + Age, data = antrData_female)
+
+summary(fitMulti_female)
+```
+
+Na prvi pogled nije se puno promjenilo ali primarni razlog ovog koraka je bilo popravljanje pretpostavke o normalnosti tako da u sljedećem koraku provjeravamo upravo to.
+
+
+```{r}
+hist(fitMulti_male$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za muškarce")
+hist(rstandard(fitMulti_male), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za muškarce")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_male))
+qqline(rstandard(fitMulti_male))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_male))
+
+hist(fitMulti_female$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za žene")
+hist(rstandard(fitMulti_female), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za žene")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_female))
+qqline(rstandard(fitMulti_female))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_female))
+```
+
+Iako je p vrijednost u oba slučaja značajno narasla, dapače za žensku populaciju ne odbacujemo $H_0$, problem je i dalje prisutan u muškoj populaciji. Nadalje homogenost varijanci se nije popravila te i dalje indicira polinomijalnu ovisnost. Ipak ako razmislimo o tome kakvi ljudi služe u vojsci lako možemo doći do zaključka o tome gdje bi se problem mogao nalaziti.
+
+```{r}
+hist(antrData_male$Age, breaks = 30 ,col = rgb(1,0,0,0.5), xlab = "Dob", ylab = "Broj subjekata", main = "Dob među muškom populacijom")
+
+hist(antrData_female$Age, breaks = 30, col =rgb(0,1,0,0.5), add = T)
+
+legend('topright', legend = c("Muškarci", "Žene"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+```
+
+I upravo ovdje nailazimo na problem, kako je biti vojnik izuzetno naporan fizički posao populacija je većinski sastavljena od mladih ljudi. Kao što je vidljivo iz histograma distribucija dobi među populacijom nije normalna tje vjerovatni uzročnik pada našeg modela na testu normalnosti.
+
+Kako bi to provjerili izgraditi ćemo model koji ne uključuje dob te ga testirati na normalnost. Zbog male $R^2$ vrijednosti linearnog modela koji je uključivao samo dob ne očekujemo preveliki gubitak u tom području.
+
+```{r}
+fitMulti_male = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature, data = antrData_male)
+
+summary(fitMulti_male)
+
+fitMulti_female = lm(weightkg ~ waistcircumference + bicepscircumferenceflexed + chestcircumference
+                      + thighcircumference + stature, data = antrData_female)
+
+summary(fitMulti_female)
+
+```
+Vidimo kako je smanjenje $R^2$ vrijednosti zanemarivo tako da je isključivanje dobi iz modela i s te strane opravdano. Provjerimo sad normlanost naših novih modela.
+
+```{r}
+hist(fitMulti_male$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za muškarce")
+hist(rstandard(fitMulti_male), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za muškarce")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_male))
+qqline(rstandard(fitMulti_male))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_male))
+
+hist(fitMulti_female$residuals, xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Reziduali modela sa svim spomenutim regresorima za žene")
+hist(rstandard(fitMulti_female), xlab = "Vrijednost reziduala", ylab = "Reziduali", breaks = 30, main = "Standardizirani reziduali modela sa svim spomenutim regresorima za žene")
+
+plot(fitMulti_male, which = 1)
+
+qqnorm(rstandard(fitMulti_female))
+qqline(rstandard(fitMulti_female))
+
+require(nortest)
+lillie.test(rstandard(fitMulti_female))
+```
+
+Tu ćemo stati s daljnim poboljšavanje modela. Za ženski dio populacije ne odbacujemo $H_0$ te zaključujemo kako nema dovoljno dokaza da bi odbacili hiptezu o normalnosti. Nažalost za muški dio populacije ne možemo donjeti isti zaključak na temelju Lillieforsovog testa. S druge strane možemo se pozvati na robusnost t-testa na normalnost, s obzirom na to da su histogrami relativno urednog oblika te nemaju teških repova. Ipak ovo je indikacija kako u težini među muškarcima postoji varijacija koju naš model ne objašnjava. Isto tako daljna poboljšanja modela su svakako moguća s obzirom na graf reziduala i prilagodenih vrijednosti iz kojeg jasno vidimo kako pretpostavka o homogenosti varijance nije zadovoljena te reziduali pokazuju polinomijalnu ovisnost.
+
+## Zaključak
+
+Izgradili smo dva multivarijatna linarna modela za predviđanje težine osobe. Modeli su odvojeni po spolu i oba modela objašnjavaju preko 95% varijance u podacima. Ovakav prediktivni model bi mogao biti izuzetno koristan u medicini pogotovo u područijima gdje vaga nije dostupna. Iz tog razloga je svih 5 regresora moguće dobiti korištenjem jednostavnog krojačkog metra. Isto tako podaci ne zahtjevaju nikakvo ispitivanje bolesnika, što može biti izuzetno korisno u hitnim situacijama kada je pacijent bez svijesti.
+
+
+
+
+
+
+
+
+
+
+
+
+
+

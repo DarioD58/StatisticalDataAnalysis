@@ -1,0 +1,375 @@
+---
+title: Logistički model za predviđanje pripadnika bijele ili crne rase na temelju omjera raspona ruku i visine
+author: "dariodekovic"
+date: "01/16/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Logistički model za predviđanje pripadnika bijele ili crne rase na temelju omjera raspona ruku i visine
+
+## Motivacija
+
+Svakom obožavatelju američkog sporta poznate su brojne antropometrijske mjere koje se uzimaju u obzir prilikom evaluacije igrača. Jedna od najbitnijih mjera za procjenu igrača je raspon ruku, najviše je to naglašeno u košarci. Kako sam i sam vjerni pratitelj NBA i NFL lige primjetio sam kako u tim evaluacijama crni igrači najčešće imaju veći raspon ruku nego bijeli igrači, pogotovo u odnosu na visinu. U sljedećem odlomku slijedi analiza omjera raspona ruku i visine između bijele i crne rase. Kako bi se smanjio utjecaj dodatnih faktora, promatrati ćemo muškarce i žene odvojeno. Na kraju ćemo pristupiti izgradnji logističkog modela za predviđanje rase na temelju prije spomenutog omjera.
+
+```{r}
+antrData =  read.csv("ANSUR_II_data.csv")
+```
+
+```{r}
+antrData$colorData = "black"
+antrData$colorData[antrData$DODRace != 1] = "red"
+
+require(fastDummies)
+antrData = dummy_cols(antrData, select_columns = c("Gender"))
+
+```
+
+Nakon dodavanja stupca za boju različitih rasa i stvaranju dummy varijable za prikaz spola, pristupamo odvajanju podataka na muške i ženske te izdavajanje pripadnika bijele i crne rase.
+
+```{r}
+antrData_male <- antrData[antrData$Gender_Male == 1,]
+antrData_blackwhite <- antrData_male[antrData_male$DODRace == 1 | antrData_male$DODRace == 2,]
+
+antrData_female <- antrData[antrData$Gender_Male == 0,]
+antrData_blackwhite_female <- antrData_female[antrData_female$DODRace == 1 | antrData_female$DODRace == 2,]
+
+```
+
+Nakon razdvajanja stvaramo stupac u kojem će se nalaziti omjer nad kojim ćemo vršiti analizu.
+
+```{r}
+antrData_blackwhite$spanheightratio <- antrData_blackwhite$span / antrData_blackwhite$stature
+antrData_blackwhite_female$spanheightratio <- antrData_blackwhite_female$span / antrData_blackwhite_female$stature
+```
+
+```{r}
+plot(antrData_blackwhite$spanheightratio, antrData_blackwhite$span, pch=15, xlab = 'Omjer rapsona ruku i visine', ylab = 'Raspon ruku',col=antrData_blackwhite$colorData, main = "Omjer među muškom populacijom")
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c("black", "red"), pt.cex=2, pch=15)
+
+plot(antrData_blackwhite_female$spanheightratio, antrData_blackwhite_female$span, pch=15, xlab = 'Omjer rapsona ruku i visine', ylab = 'Raspon ruku',col=antrData_blackwhite_female$colorData, main = "Omjer među ženskom populacijom")
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c("black", "red"), pt.cex=2, pch=15)
+```
+
+Dijagram raspršenja nam pruža određenu informaciju o tome kako se omjer razlikuje između pripadnika bijele i crne rase. Ipak s obzirom na broj podataka histogram će nam možda pružiti jasniji uvod u prirodu dviju distribucija.
+
+```{r}
+mean_male_white <- mean(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 1])
+mean_male_black <- mean(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 2])
+
+hist(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među muškom populacijom")
+
+hist(antrData_blackwhite$spanheightratio[antrData_blackwhite$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_male_white, col = "black", lwd = 2)
+abline(v = mean_male_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+
+mean_female_white <- mean(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 1])
+mean_female_black <- mean(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 2])
+
+hist(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među ženskom populacijom")
+
+hist(antrData_blackwhite_female$spanheightratio[antrData_blackwhite_female$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_female_white, col = "black", lwd = 2)
+abline(v = mean_female_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+```
+
+Iz histograma se jako lijepo vidi razlika između dvije populacije te razlika njihovih srednjih vrijednosti. Testiranje hipoteze ako je razlika tih dviju statistika statistički značajna ćemo ostaviti za kasnije, a sada kada smo se uvjerili da određena razina razlike postoji ćemo pristupiti izgradnji prvog logističkog modela. Prvi model ćemo izgraditi samo za mušku populaciju.
+
+```{r}
+antrData_blackwhite = dummy_cols(antrData_blackwhite, select_columns = c("DODRace"))
+antrData_blackwhite_female = dummy_cols(antrData_blackwhite_female, select_columns = c("DODRace"))
+```
+
+```{r}
+logitSpan <- glm(DODRace_1 ~ spanheightratio, data=antrData_blackwhite, family='binomial')
+summary((logitSpan))
+```
+
+Zasada stvari izgledaju dobro oba koeficijenta su statistički značajna, a residual deviance koja predstavlja razliku između zasićenog modela(svaki podatak ima jedan parametar) i našeg modela pokazuje značajnu razliku od null deviance koja predstavlja razliku između zasićenog modela i null modela(modela koji koristi samo jedan parametar) što se smatra poželjnim. Ipak već u sljedećem koraku uočiti ćemo bitan problem s našim modelom.
+
+```{r}
+logitSpan_probs <- predict(logitSpan, type="response")
+logitSpan_predicitions <- ifelse(logitSpan_probs > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions, antrData_blackwhite$DODRace_1))
+print(conffMatrix)
+```
+
+```{r}
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions)
+print(accuracy)
+```
+
+Ovdje nailazimo na čest problem kod logističke regresije, ne balansirani skupovi kategorija. S obzirom da je pripadnika bijele rase  skoro 5 puta više od pripadnika crne rase modelu se puno više "isplati" predviđati pripadnost bijeloj rasi nego crnoj. Naravno ako gledamo samo preciznost modela nećemo doći do tog zaključka te je bitno proučiti matricu zabune koja nam otkriva ovaj problem u našem modelu. Naime jasno vidimo
+
+```{r}
+table(antrData_blackwhite$DODRace)
+table(antrData_blackwhite_female$DODRace)
+```
+
+Isto tako je jasno da je u ženskim podacima isti problem značajno manji i ta razlika možda predstvalja temelje za zanimljivu analizu mogući uzroka ali to je van domene ove analize. 
+
+S obzirom na više nego dovoljan broj podataka umjetno ćemo stvoriti balansirane skupove tako što ćemo ispremješati redove u tablici te nausimčno izabrati retke koji će ulaziti u model. Kako bi dobili ponovljive podatke seed ćemo postaviti na fiksnu vrijednost
+
+```{r}
+equalData <- function(df){
+  size <- nrow(df[df$DODRace == 2, ])
+  count <- 0
+  indices <- c()
+  
+  
+  for(i in 1:nrow(df)){
+    if(df$DODRace[i] == 1){
+      if(count >= size){
+        indices[i] <- FALSE 
+      } else{
+        count <- count + 1
+        indices[i] <- TRUE
+      }
+    } else {
+      indices[i] <- TRUE 
+    }
+  }
+  return(indices)
+}
+```
+
+
+
+```{r}
+set.seed(42)
+
+rows <- sample(nrow(antrData_blackwhite))
+rows_female <- sample(nrow(antrData_blackwhite_female))
+
+antrData_blackwhite_shuffle <- antrData_blackwhite[rows, ]
+antrData_blackwhite_female_shuffle <- antrData_blackwhite_female[rows_female, ]
+
+indices <- equalData(antrData_blackwhite_shuffle)
+indices_female <- equalData(antrData_blackwhite_female_shuffle)
+
+antrData_blackwhite_shuffle <- antrData_blackwhite_shuffle[indices, ]
+nrow(antrData_blackwhite_shuffle[antrData_blackwhite_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhite_shuffle[antrData_blackwhite_shuffle$DODRace == 1, ])
+
+antrData_blackwhite_female_shuffle <- antrData_blackwhite_female_shuffle[indices_female, ]
+nrow(antrData_blackwhite_female_shuffle[antrData_blackwhite_female_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhite_female_shuffle[antrData_blackwhite_female_shuffle$DODRace == 1, ])
+```
+
+Nakon balansiranja broj podataka iz obije kategorije pristupamo ponovnoj konstrukciji histograma koji bi u ovom slučaju trebali biti još indikativniji.
+
+```{r}
+mean_male_white <- mean(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 1])
+mean_male_black <- mean(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 2])
+
+hist(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među muškom populacijom")
+
+hist(antrData_blackwhite_shuffle$spanheightratio[antrData_blackwhite_shuffle$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_male_white, col = "black", lwd = 2)
+abline(v = mean_male_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+
+mean_female_white <- mean(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 1])
+mean_female_black <- mean(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 2])
+
+hist(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među ženskom populacijom")
+
+hist(antrData_blackwhite_female_shuffle$spanheightratio[antrData_blackwhite_female_shuffle$DODRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_female_white, col = "black", lwd = 2)
+abline(v = mean_female_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+```
+
+Sada se u histogramu jasnije vidi razlika između dviju populacija i jasnija je distribucija dviju populacija.
+
+Sada imamo jednak broj nausimčno odabranih pripadnika bijele rase kao i pripadnika crne rase. S time eliminiramo pristranost modela prema bijeloj rasi i možemo bolje proučavati kako se omjer ponaša te ćemo sad izgraditi i model za ženski dio populacije.
+
+```{r}
+logitSpan_corrected <- glm(DODRace_1 ~ spanheightratio, data=antrData_blackwhite_shuffle, family='binomial')
+summary((logitSpan_corrected))
+
+logitSpan_female <- glm(DODRace_1 ~ spanheightratio, data=antrData_blackwhite_female_shuffle, family='binomial')
+summary((logitSpan_female))
+```
+
+Sada su rezultati puno kvalitetniji, primjećujemo prvo kako je medijan reziduala jako blizu nuli što je dobar indikator da model nije pristran. Isto tako devijacija reziduala je značajno manja od devijacije nul modela za oba modela. Nadalje obije devijacije reziduala su jako blizu broju stupnjeva slobode što je dobar indikator za kvalitetu modela.
+
+
+```{r}
+logitSpan_probs_corrected <- predict(logitSpan_corrected, type="response")
+logitSpan_probs_female <- predict(logitSpan_female, type="response")
+
+logitSpan_predicitions_corrected <- ifelse(logitSpan_probs_corrected > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions_corrected, antrData_blackwhite_shuffle$DODRace_1))
+print(conffMatrix)
+
+logitSpan_predicitions_female <- ifelse(logitSpan_probs_female > 0.5, 1, 0)
+conffMatrix_female <- as.data.frame(table(logitSpan_predicitions_female, antrData_blackwhite_female_shuffle$DODRace_1))
+print(conffMatrix_female)
+```
+
+
+```{r}
+
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions_corrected)
+print(accuracy)
+
+accuracy_female <- (conffMatrix_female[1, 3] + conffMatrix_female[4, 3])/length(logitSpan_predicitions_female)
+print(accuracy_female)
+```
+
+Iako nam dolazi manja točnost nego u ne prilagodenom modelu gdje nije jednak broj elemenata svake klase treba uzeti u obzir kako točnost sama po sebi nije dobar prediktor kvalitete logističkog modela te je ovaj model neosporno kvalitetniji od prethodnog te možemo vidjeti da model postiže značajno bolju točnost od nasumičnog predviđanja i za muškarce i za žene.
+
+Sljedeći korak nam može biti dodatno filtriranje podataka s genetske strane jer DODRace stupac predstavlja osobnu preferiranu rasu. S obzirom da velika većina ljudi u ovom modernom vremenu globalizacije potječe iz različitih rasnih skupina možemo filtrirati po stupcu SubjectNumericRace koji predstavlja potpuni prikaz podrijetla osobe tako da uzmemo osobe koje su prijavile samo crnu ili bijelu rasu kao svoje podrijetlo.
+
+```{r}
+antrData_blackwhiteonly <- antrData_male[antrData_male$SubjectNumericRace == 1 | antrData_male$SubjectNumericRace == 2,]
+antrData_blackwhiteonly_female <- antrData_female[antrData_female$SubjectNumericRace == 1 | antrData_female$SubjectNumericRace == 2,]
+
+antrData_blackwhiteonly$spanheightratio <- antrData_blackwhiteonly$span / antrData_blackwhiteonly$stature
+antrData_blackwhiteonly_female$spanheightratio <- antrData_blackwhiteonly_female$span / antrData_blackwhiteonly_female$stature
+
+```
+
+
+```{r}
+rows <- sample(nrow(antrData_blackwhiteonly))
+rows_female <- sample(nrow(antrData_blackwhiteonly_female))
+
+antrData_blackwhiteonly_shuffle <- antrData_blackwhiteonly[rows, ]
+antrData_blackwhiteonly_female_shuffle <- antrData_blackwhiteonly_female[rows_female, ]
+
+indices <- equalData(antrData_blackwhiteonly_shuffle)
+indices_female <- equalData(antrData_blackwhiteonly_female_shuffle)
+
+antrData_blackwhiteonly_shuffle <- antrData_blackwhiteonly_shuffle[indices, ]
+nrow(antrData_blackwhiteonly_shuffle[antrData_blackwhiteonly_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhiteonly_shuffle[antrData_blackwhiteonly_shuffle$DODRace == 1, ])
+
+
+antrData_blackwhiteonly_female_shuffle <- antrData_blackwhiteonly_female_shuffle[indices_female, ]
+nrow(antrData_blackwhiteonly_female_shuffle[antrData_blackwhiteonly_female_shuffle$DODRace == 2, ])
+nrow(antrData_blackwhiteonly_female_shuffle[antrData_blackwhiteonly_female_shuffle$DODRace == 1, ])
+```
+```{r}
+mean_male_white <- mean(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 1])
+mean_male_black <- mean(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 2])
+
+hist(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među muškom populacijom")
+
+hist(antrData_blackwhiteonly_shuffle$spanheightratio[antrData_blackwhiteonly_shuffle$SubjectNumericRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_male_white, col = "black", lwd = 2)
+abline(v = mean_male_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+
+
+mean_female_white <- mean(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 1])
+mean_female_black <- mean(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 2])
+
+hist(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 1], breaks = 30,xlim=c(0.94,1.16) ,col = rgb(1,0,0,0.5), xlab = "Omjer raspona ruku i visine", ylab = "Broj subjekata", main = "Omjer među ženskom populacijom")
+
+hist(antrData_blackwhiteonly_female_shuffle$spanheightratio[antrData_blackwhiteonly_female_shuffle$SubjectNumericRace == 2], breaks = 30,xlim=c(0.94,1.16), col =rgb(0,1,0,0.5), add = T)
+
+abline(v = mean_female_white, col = "black", lwd = 2)
+abline(v = mean_female_black, col = "red", lwd = 2)
+
+legend('topright', legend = c("Bijela populacija", "Crna populacija"), col = c(rgb(1,0,0,0.5), rgb(0,1,0,0.5)), pt.cex=2, pch=15)
+```
+
+Zasada ne primjećujemo neku značajnu razliku iz samih histograma, ali nastavljamo s izgradnjom logističkog modela.
+
+```{r}
+antrData_blackwhiteonly_shuffle = dummy_cols(antrData_blackwhiteonly_shuffle, select_columns = c("SubjectNumericRace"))
+antrData_blackwhiteonly_female_shuffle = dummy_cols(antrData_blackwhiteonly_female_shuffle, select_columns = c("SubjectNumericRace"))
+```
+
+
+```{r}
+logitSpan_only <- glm(SubjectNumericRace_1 ~ spanheightratio, data=antrData_blackwhiteonly_shuffle, family='binomial')
+summary((logitSpan_only))
+
+logitSpan_only_female <- glm(SubjectNumericRace_1 ~ spanheightratio, data=antrData_blackwhiteonly_female_shuffle, family='binomial')
+summary((logitSpan_only_female))
+
+```
+
+I dalje ne primjećujemo značajnu razliku između filtriranih rasa i preferiranih rasa
+
+```{r}
+logitSpan_probs_only <- predict(logitSpan_only, type="response")
+logitSpan_probs_only_female <- predict(logitSpan_only_female, type="response")
+
+logitSpan_predicitions_only <- ifelse(logitSpan_probs_only > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions_only, antrData_blackwhiteonly_shuffle$SubjectNumericRace_1))
+print(conffMatrix)
+
+logitSpan_predicitions_only_female <- ifelse(logitSpan_probs_only_female > 0.5, 1, 0)
+conffMatrix_female <- as.data.frame(table(logitSpan_predicitions_only_female, antrData_blackwhiteonly_female_shuffle$SubjectNumericRace_1))
+print(conffMatrix_female)
+```
+
+
+```{r}
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions_only)
+print(accuracy)
+
+accuracy <- (conffMatrix_female[1, 3] + conffMatrix_female[4, 3])/length(logitSpan_predicitions_only_female)
+print(accuracy)
+```
+
+Vidimo kako se preciznost modela neznatno povećala ali kao što je već naznačeno preciznost nije uvijek najbolja mjera kvalitete modela. Iz priloženoga možemo vidjeti kako je preferirana rasa najčešće jednaka samoj rasi te kako bi za detaljniju analizu ovog omjera bilo potrebno detaljnije genetsko ispitivanje podrijetla koje je van domene ovog istraživanja.
+
+Kao završnu zanimljivost testirati ćemo naš model na neviđenim podacima. Podaci su prikupljeni iz službenih mjera igrača američkog nogometa prilikom ulaska u ligu. Podaci su prikupljeni sa sljedećih stranica:
+
+https://www.cbssports.com/nfl/draft/news/nfl-combine-2020-tracker-measurements-results-of-the-best-individual-performances-from-indianapolis/
+https://nflcombineresults.com/playerpage.php?i=22415
+
+Podatke učitavamo i testiramo naš model na njima
+
+```{r}
+testingData = read.csv("AddedData.csv")
+
+testingData$spanheightratio <- testingData$span/testingData$height
+```
+
+```{r}
+logitSpan_probs_testing <- predict(logitSpan_only, newdata = testingData ,type="response")
+
+logitSpan_predicitions_testing <- ifelse(logitSpan_probs_testing > 0.5, 1, 0)
+conffMatrix <- as.data.frame(table(logitSpan_predicitions_testing, testingData$race))
+print(conffMatrix)
+
+accuracy <- (conffMatrix[1, 3] + conffMatrix[4, 3])/length(logitSpan_predicitions_testing)
+print(accuracy)
+```
+
+Vidimo kako smo na ovom malom skupu podataka postigli točnost od 80%. Naravno ovako mali skup za testiranje nije relevantan za izvlačenje neki ozbiljnijih zaključaka ali je lijepo vidjet kako naš model radi na dosad neviđenim podacima.
+
+
+## Zaključak
+
+Izgradili smo logistički model za predviđanje rase osobe na temelju omjera raspona ruku i visine. Nadalje pokazano je postojanje razlike između bijele i crne rase u pogledu ovog omjera što predstavlja zanimljivu činjenicu s antropološkog i evolucijskog stajališta. Postojanje ove razlike bi moglo biti korisno proizvođačima vojne opreme. Isto tako ova razlika je vjerojatno jedan od razloga dominacije pripadnika crne rase u sportovima u kojima raspon ruku igra značajnu ulogu, kao što je košarka.
+
+
+
