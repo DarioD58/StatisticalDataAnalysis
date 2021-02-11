@@ -9,8 +9,8 @@ This project is the result of my work on the subject Statistical Data Analysis a
 <details>
 <summary><em>Instructions</em></summary>
 <br>
-Whoever whishes to run these files on their computer should first download ANSUR II dataset from this [location](https://www.openlab.psu.edu/ansur2/)
+Whoever whishes to run these files on their computer should first download ANSUR II dataset from here https://www.openlab.psu.edu/ansur2/
 </details>
 
 ## Introduction
-Data I used in this project comes from a well known ANSUR II dataset, which containes 93 antropometrical measures gathered from the memberes of the US Military. Overall, there are 6068 datapoints, 4082 of them are male and 1986 of them are female. On this dataset I conducted my data analysis. This consisted of hypothesis testing and model building.
+Data I used in this project comes from a well known ANSUR II dataset, which contains 93 anthropometrical measures gathered from the members of the US Military. Overall, there are 6068 data points, 4082 of them are male and 1986 of them are female. On this dataset, I conducted my data analysis. This consisted of hypothesis testing and model building.
