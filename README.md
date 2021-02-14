@@ -14,3 +14,7 @@ Whoever whishes to run these files on their computer should first download ANSUR
 
 ## Introduction
 Data I used in this project comes from a well known ANSUR II dataset, which contains 93 anthropometrical measures gathered from the members of the US Military. Overall, there are 6068 data points, 4082 of them are male and 1986 of them are female. On this dataset, I conducted my data analysis. This consisted of hypothesis testing and model building.
+
+## Model for weight prediction from available data
+
+### Motivation
